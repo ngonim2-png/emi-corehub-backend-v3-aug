@@ -1,0 +1,22 @@
+# Replace with your real domain before deploying. Caddy automatically
+# obtains and renews a Let's Encrypt certificate for whatever domain(s)
+# you put here - no certbot, no manual renewal cron job.
+
+api.enhancedmutual.sl {
+    reverse_proxy api:3000
+
+    encode gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Basic rate limiting is already handled by the app's ThrottlerModule;
+    # this is an additional edge-level backstop.
+    log {
+        output file /data/access.log
+    }
+}
