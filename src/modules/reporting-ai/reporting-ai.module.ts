@@ -11,5 +11,6 @@ import { AnthropicAiAdapter } from './adapters/anthropic-ai.adapter';
   imports: [ClientsPoliciesModule, ClaimsModule, FinanceIfrs17Module],
   providers: [ReportingService, { provide: AI_PROVIDER, useClass: AnthropicAiAdapter }],
   controllers: [DashboardController, AiAssistantController, RegulatoryReportController],
+  exports: [ReportingService],
 })
 export class ReportingAiModule {}

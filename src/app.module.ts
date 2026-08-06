@@ -34,6 +34,7 @@ import { MarketingAutomationModule } from './modules/marketing-automation/market
 import { RegulatoryFormsModule } from './modules/regulatory-forms/regulatory-forms.module';
 import { PayrollUploadModule } from './modules/payroll-upload/payroll-upload.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
+import { LeadershipModule } from './modules/leadership/leadership.module';
 import { JobsModule } from './jobs/jobs.module';
 
 @Module({
@@ -121,6 +122,7 @@ import { JobsModule } from './jobs/jobs.module';
     RegulatoryFormsModule,
     PayrollUploadModule,
     CalendarModule,
+    LeadershipModule,
 
     // Background jobs (spans all phases)
     JobsModule,

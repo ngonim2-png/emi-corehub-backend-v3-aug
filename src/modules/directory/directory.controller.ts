@@ -23,4 +23,11 @@ export class DirectoryController {
       .filter((u) => u.role?.name === 'Marketer / Agent')
       .map((u) => ({ id: u.id, fullName: u.fullName }));
   }
+
+  /** Every active staff member, not just marketers - for assigning things like calendar events to any colleague, not only field agents. Same minimal id+fullName shape, same reasoning as marketers() above. */
+  @Get('staff')
+  async staff() {
+    const users = await this.usersRepo.find({ relations: ['role'], where: { status: 'Active' } });
+    return users.map((u) => ({ id: u.id, fullName: u.fullName, role: u.role?.name ?? '' }));
+  }
 }

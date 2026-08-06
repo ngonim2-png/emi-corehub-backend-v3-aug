@@ -8,5 +8,6 @@ import { CalendarController } from './calendar.controller';
   imports: [TypeOrmModule.forFeature([CalendarEventEntity])],
   providers: [CalendarService],
   controllers: [CalendarController],
+  exports: [CalendarService],
 })
 export class CalendarModule {}
