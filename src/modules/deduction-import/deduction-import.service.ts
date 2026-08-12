@@ -15,6 +15,21 @@ interface ParsedDeductionRow {
   amount: number;
 }
 
+/**
+ * Column positions are detected dynamically from the "PIN CODE" header
+ * row rather than assumed fixed - confirmed necessary against real
+ * files: the Accountant General's export shifted every column one
+ * position to the right between two real files we've seen (an added
+ * leading "Status" column), and there's no reason to assume it won't
+ * shift again. The amount column sits one position to the left of
+ * where its own "ADV AMOUNT" header label appears (a consistent
+ * merged-cell quirk in the source report, verified against all header
+ * blocks in a real file) - not the same position as the label itself.
+ * The MDA code/name row immediately preceding each block uses the
+ * same pincode column for its code, and pincode column + 4 for the
+ * name - also verified directly against real files rather than
+ * assumed.
+ */
 function parseDeductionFile(buffer: Buffer): ParsedDeductionRow[] {
   const wb = XLSX.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
@@ -25,28 +40,55 @@ function parseDeductionFile(buffer: Buffer): ParsedDeductionRow[] {
   let currentMdaCode: string | null = null;
   let currentMdaName: string | null = null;
 
+  // The column mapping is consistent for the whole file (verified
+  // against real exports), but the very first MDA block's info row
+  // appears *before* its own header row - so without this pre-scan,
+  // that first block's code/name would be silently lost even though
+  // every later block's would be captured correctly.
+  let cols: { pin: number; name: number; desc: number; amt: number } | null = null;
+  for (const row of rows) {
+    if (!row) continue;
+    const pinHeaderCol = row.indexOf('PIN CODE');
+    if (pinHeaderCol === -1) continue;
+    const nameHeaderCol = row.indexOf('NAME');
+    const descHeaderCol = row.indexOf('DESCRIPTION');
+    const amtHeaderCol = row.indexOf('ADV AMOUNT');
+    if (nameHeaderCol !== -1 && descHeaderCol !== -1 && amtHeaderCol !== -1) {
+      cols = { pin: pinHeaderCol, name: nameHeaderCol, desc: descHeaderCol, amt: amtHeaderCol - 1 };
+      break;
+    }
+  }
+  if (!cols) return records; // no recognizable header found anywhere - nothing reliable to parse
+
   for (const row of rows) {
     if (!row || row.length === 0) continue;
-    const col0 = row[0];
-    const col4 = row[4];
-    const col7 = row[7];
-    const col12 = row[12];
-    const col20 = row[20];
 
-    if (col0 && col4 && col0 !== 'D/FCB' && col0 !== 'PIN CODE' && !col7 && String(col0).length <= 6) {
-      currentMdaCode = String(col0).trim();
-      currentMdaName = String(col4).trim();
+    if (row.indexOf('PIN CODE') !== -1) continue; // already used to establish cols above - skip re-processing as data
+
+    // MDA info row: a short code sitting in the same column pincode
+    // data will later occupy, with the MDA's name 4 columns further
+    // along - and critically, nothing in the name column itself
+    // (that's what distinguishes it from an actual data row).
+    const possibleCode = row[cols.pin];
+    const possibleName = row[cols.pin + 4];
+    if (possibleCode && possibleName && !row[cols.name] && possibleCode !== 'D/FCB' && String(possibleCode).trim().length <= 6) {
+      currentMdaCode = String(possibleCode).trim();
+      currentMdaName = String(possibleName).trim();
       continue;
     }
 
-    if (col0 && col7 && col7 !== 'NAME' && col7 !== 'TOTAL DEPARTMENT' && col12 === 'Enhanced Mutual Insurance') {
-      const amount = typeof col20 === 'number' ? col20 : parseFloat(col20);
+    const pincodeCell = row[cols.pin];
+    const nameCell = row[cols.name];
+    const descCell = row[cols.desc];
+    const amountCell = row[cols.amt];
+    if (pincodeCell && nameCell && nameCell !== 'TOTAL DEPARTMENT' && descCell === 'Enhanced Mutual Insurance') {
+      const amount = typeof amountCell === 'number' ? amountCell : parseFloat(amountCell);
       if (isNaN(amount)) continue;
       records.push({
         mdaCode: currentMdaCode,
         mdaName: currentMdaName,
-        pincode: String(col0).trim(),
-        employeeName: String(col7).trim(),
+        pincode: String(pincodeCell).trim(),
+        employeeName: String(nameCell).trim(),
         amount,
       });
     }

@@ -60,6 +60,17 @@ import { JobsModule } from './jobs/jobs.module';
           synchronize: !isProd && config.get<string>('nodeEnv') === 'development',
           migrationsRun: isProd,
           migrations: [__dirname + '/migrations/*{.ts,.js}'],
+          // The pg driver defaults to just 10 connections if this isn't
+          // set explicitly, which is easy to exhaust once a large
+          // sequential import (roster or deduction files, hundreds of
+          // rows each needing their own query) runs at the same time as
+          // normal staff traffic - other requests then queue for a free
+          // connection and can hit the frontend's own request timeout
+          // while waiting, even though the server itself is healthy.
+          // Render's databases allow up to ~97 connections by default
+          // (more on higher-memory plans), so this leaves comfortable
+          // headroom rather than pushing toward that ceiling.
+          extra: { max: 20 },
         };
         if (url) {
           // Most managed Postgres providers (Render, Railway, etc.)
