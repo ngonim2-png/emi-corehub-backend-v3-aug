@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
 
-export type ActionItemStatus = 'Open' | 'Completed';
+export type ActionItemStatus = 'Open' | 'Completed' | 'Missed';
 
 /**
  * A concrete assignment coming out of a meeting - "Abu to follow up
@@ -30,6 +30,10 @@ export class ActionItemEntity {
 
   @Column({ type: 'date' })
   dueDate: string;
+
+  /** Optional time of day, 'HH:MM' - same reasoning as the meeting's own time field. */
+  @Column({ type: 'varchar', nullable: true })
+  time: string | null;
 
   @Column({ default: 'Open' })
   status: ActionItemStatus;

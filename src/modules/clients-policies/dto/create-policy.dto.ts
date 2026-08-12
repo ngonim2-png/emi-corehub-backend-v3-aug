@@ -27,4 +27,16 @@ export class CreatePolicyDto {
 
   @IsString()
   paymentMethod: string;
+
+  @IsOptional()
+  @IsString()
+  insuredName?: string;
+
+  @IsOptional()
+  @IsDateString()
+  insuredDob?: string;
+
+  @IsOptional()
+  @IsString()
+  payrollPinCode?: string;
 }

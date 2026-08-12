@@ -145,6 +145,7 @@ export class LifecycleTriggersService {
         reportingMonth,
         rules,
       );
+      if (policy.status === 'Cancelled') continue;
       if (computed.status !== targetStatus) continue;
       await this.notificationsService.queueSms({
         toPhone: policy.client.phone, relatedType: 'trigger', relatedId: trigger.id,

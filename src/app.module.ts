@@ -35,6 +35,10 @@ import { RegulatoryFormsModule } from './modules/regulatory-forms/regulatory-for
 import { PayrollUploadModule } from './modules/payroll-upload/payroll-upload.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
 import { LeadershipModule } from './modules/leadership/leadership.module';
+import { ClientPortalModule } from './modules/client-portal/client-portal.module';
+import { PolicyDocumentsModule } from './modules/policy-documents/policy-documents.module';
+import { RosterImportModule } from './modules/roster-import/roster-import.module';
+import { DeductionImportModule } from './modules/deduction-import/deduction-import.module';
 import { JobsModule } from './jobs/jobs.module';
 
 @Module({
@@ -123,6 +127,10 @@ import { JobsModule } from './jobs/jobs.module';
     PayrollUploadModule,
     CalendarModule,
     LeadershipModule,
+    ClientPortalModule,
+    PolicyDocumentsModule,
+    RosterImportModule,
+    DeductionImportModule,
 
     // Background jobs (spans all phases)
     JobsModule,

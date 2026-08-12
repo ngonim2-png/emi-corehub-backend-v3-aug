@@ -10,6 +10,18 @@ export class GoalsService {
     @InjectRepository(GoalEntity) private readonly goalsRepo: Repository<GoalEntity>,
   ) {}
 
+  /** True when the goal's month has fully ended and nobody has reviewed it yet. Computed live, never persisted. */
+  private withReviewOverdue(goal: GoalEntity): GoalEntity {
+    if (goal.status === 'Active') {
+      const [year, monthNum] = goal.month.split('-').map(Number);
+      const monthEnd = new Date(Date.UTC(year, monthNum, 1)); // first moment of the following month
+      goal.reviewOverdue = monthEnd.getTime() < Date.now();
+    } else {
+      goal.reviewOverdue = false;
+    }
+    return goal;
+  }
+
   async create(input: { month: string; description: string }, actor: AuthenticatedUser): Promise<GoalEntity> {
     return this.goalsRepo.save(
       this.goalsRepo.create({ month: input.month, description: input.description, status: 'Active', createdBy: actor.id }),
@@ -17,13 +29,14 @@ export class GoalsService {
   }
 
   async findByMonth(month: string): Promise<GoalEntity[]> {
-    return this.goalsRepo.find({ where: { month }, order: { createdAt: 'ASC' } });
+    const goals = await this.goalsRepo.find({ where: { month }, order: { createdAt: 'ASC' } });
+    return goals.map((g) => this.withReviewOverdue(g));
   }
 
   async findOne(id: string): Promise<GoalEntity> {
     const goal = await this.goalsRepo.findOne({ where: { id } });
     if (!goal) throw new NotFoundException('Goal not found');
-    return goal;
+    return this.withReviewOverdue(goal);
   }
 
   async setStatus(id: string, status: GoalStatus): Promise<GoalEntity> {

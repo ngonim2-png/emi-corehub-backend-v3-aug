@@ -1,7 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
 
 export type MeetingType = 'Weekly Planning' | 'Weekly Recap' | 'Monthly Goal Setting';
-export type MeetingStatus = 'Scheduled' | 'Completed';
+export type MeetingStatus = 'Scheduled' | 'Completed' | 'Missed';
 
 /**
  * A record of each leadership session - Monday planning, Friday recap,
@@ -20,6 +20,10 @@ export class MeetingEntity {
 
   @Column({ type: 'date' })
   date: string;
+
+  /** Optional time of day, 'HH:MM' - when set, a missed check compares against this exact moment rather than just the end of the day. */
+  @Column({ type: 'varchar', nullable: true })
+  time: string | null;
 
   @Column({ type: 'text', nullable: true })
   notes: string | null;

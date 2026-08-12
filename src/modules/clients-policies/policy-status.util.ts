@@ -30,7 +30,8 @@ export interface PolicyStatusResult {
     | 'One Month Outstanding'
     | 'Warning'
     | 'Lapsed'
-    | 'Matured';
+    | 'Matured'
+    | 'Cancelled'; // never derived here - only ever set explicitly (e.g. a bulk roster import marking a stopped policy). See PolicyEntity.status for the full literal type.
   totalExpectedMinor: number;
   totalPaidMinor: number;
   totalOutstandingMinor: number;

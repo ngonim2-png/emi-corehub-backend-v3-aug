@@ -42,4 +42,5 @@ export default () => ({
   },
   leadWebhookSecret: process.env.LEAD_WEBHOOK_SECRET ?? '',
   uploadDir: process.env.UPLOAD_DIR,
+  portalJwtSecret: process.env.PORTAL_JWT_SECRET,
 });

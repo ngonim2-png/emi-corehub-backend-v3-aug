@@ -1,6 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, Not } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PolicyEntity, PolicyStatus } from './entities/policy.entity';
 import { ClientEntity } from './entities/client.entity';
@@ -36,6 +36,9 @@ export class PoliciesService {
       maturityDate: dto.maturityDate ?? null,
       paymentMethod: dto.paymentMethod,
       status: 'Not Yet Commenced',
+      insuredName: dto.insuredName ?? null,
+      insuredDob: dto.insuredDob ?? null,
+      payrollPinCode: dto.payrollPinCode ?? null,
     });
     const saved = await this.policiesRepo.save(policy);
     this.eventEmitter.emit(DomainEvents.PolicyCreated, { policyId: saved.id });
@@ -50,7 +53,7 @@ export class PoliciesService {
 
   /** Same data-correction escape hatch as ClientsService.editFields - a real admin override, not a workflow transition. */
   async editFields(id: string, fields: Record<string, unknown>): Promise<PolicyEntity> {
-    const allowed = ['sumAssured', 'monthlyPremium', 'commencementDate', 'maturityDate', 'paymentFrequency', 'paymentMethod', 'status', 'lapseReason'];
+    const allowed = ['sumAssured', 'monthlyPremium', 'commencementDate', 'maturityDate', 'paymentFrequency', 'paymentMethod', 'status', 'lapseReason', 'insuredName', 'insuredDob', 'payrollPinCode'];
     const update: Record<string, unknown> = {};
     for (const key of allowed) {
       if (fields[key] !== undefined) update[key] = fields[key];
@@ -85,7 +88,14 @@ export class PoliciesService {
 
   /** Used only by the nightly lapse-detection job - full book, no pagination. */
   async findAllForStatusRecompute(): Promise<PolicyEntity[]> {
-    return this.policiesRepo.find();
+    // Cancelled is deliberately excluded: every other status here is
+    // purely a function of dates and payment history, so recomputing it
+    // nightly is safe and idempotent. Cancelled is the one status that
+    // can never be derived that way (a policy could have a perfectly
+    // healthy payment history right up to the point someone cancels
+    // it) - if it weren't excluded, this job would silently overwrite
+    // it back to whatever the payment history implies on its own.
+    return this.policiesRepo.find({ where: { status: Not('Cancelled') } });
   }
 
   async findAllWithClientAndProduct(): Promise<PolicyEntity[]> {
@@ -167,6 +177,9 @@ export class PoliciesService {
     reportingMonth: string,
   ): Promise<PolicyEntity> {
     const policy = await this.findOne(policyId);
+    if (policy.status === 'Cancelled') {
+      throw new ForbiddenException('This policy was cancelled, not lapsed - reinstating it this way is not supported. Contact a Super Admin if this needs to be reversed.');
+    }
     const computed = computePolicyStatus(
       {
         commencementMonth: policy.commencementDate.slice(0, 7),

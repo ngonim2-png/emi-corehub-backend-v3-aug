@@ -46,6 +46,9 @@ export class PaymentsService {
       relations: ['client'],
     });
     if (!policy) throw new BadRequestException('Policy not found');
+    if (policy.status === 'Cancelled') {
+      throw new BadRequestException('This policy was cancelled - the client is no longer active, so no further payments can be posted against it.');
+    }
     if (policy.status === 'Lapsed' || policy.status === 'Matured') {
       // Business rule: still allow posting (a lapsed policy can be revived
       // by payment under the revival rules), but this is the hook where a

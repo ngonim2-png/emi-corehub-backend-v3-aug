@@ -1,4 +1,4 @@
-import { IsArray, IsIn, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsArray, IsIn, IsNumber, IsOptional, IsString, IsUUID, Matches, Min } from 'class-validator';
 
 export class CreateTargetDto {
   @IsString()
@@ -55,4 +55,8 @@ export class CreateActionItemDto {
 
   @IsString()
   dueDate: string;
+
+  @IsOptional()
+  @Matches(/^\d{2}:\d{2}$/, { message: 'time must be in HH:MM format' })
+  time?: string;
 }

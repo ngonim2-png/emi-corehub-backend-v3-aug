@@ -109,7 +109,7 @@ export class PoliciesController {
         sumAssured: Number(policy.sumAssured),
         commencementMonth: policy.commencementDate.slice(0, 7),
         maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
-        status: computed.status,
+        status: policy.status === 'Cancelled' ? 'Cancelled' : computed.status,
         totalExpected: Money.fromMinor(computed.totalExpectedMinor).toMajor(),
         totalPaid: Money.fromMinor(computed.totalPaidMinor).toMajor(),
         totalOutstanding: Money.fromMinor(computed.totalOutstandingMinor).toMajor(),

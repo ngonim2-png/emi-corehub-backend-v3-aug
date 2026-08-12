@@ -27,20 +27,20 @@ export class CalendarController {
 
   @Post(':id/edit')
   @AuditLog({ action: 'calendar_event.edited', entityType: 'calendar_event' })
-  async update(@Param('id') id: string, @Body() input: Partial<CreateCalendarEventInput>) {
-    return this.calendarService.update(id, input);
+  async update(@Param('id') id: string, @Body() input: Partial<CreateCalendarEventInput>, @CurrentUser() actor: AuthenticatedUser) {
+    return this.calendarService.update(id, input, actor);
   }
 
   @Post(':id/status')
   @AuditLog({ action: 'calendar_event.status_changed', entityType: 'calendar_event' })
-  async setStatus(@Param('id') id: string, @Body('status') status: string) {
-    return this.calendarService.setStatus(id, status as any);
+  async setStatus(@Param('id') id: string, @Body('status') status: string, @CurrentUser() actor: AuthenticatedUser) {
+    return this.calendarService.setStatus(id, status as any, actor);
   }
 
   @Delete(':id')
   @AuditLog({ action: 'calendar_event.deleted', entityType: 'calendar_event' })
-  async delete(@Param('id') id: string) {
-    await this.calendarService.delete(id);
+  async delete(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser) {
+    await this.calendarService.delete(id, actor);
     return { deleted: true };
   }
 }

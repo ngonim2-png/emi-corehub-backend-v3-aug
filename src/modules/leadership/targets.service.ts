@@ -33,12 +33,25 @@ export class TargetsService {
     return target;
   }
 
+  /** True when the target's week (Monday through the following Sunday) has fully ended and this assignment is still sitting as 'Set' - unreviewed. */
+  private withReviewOverdue(assignment: TargetAssignmentEntity, weekStartDate: string): TargetAssignmentEntity {
+    if (assignment.status === 'Set') {
+      const weekEnd = new Date(weekStartDate);
+      weekEnd.setUTCDate(weekEnd.getUTCDate() + 7); // first moment of the following Monday
+      assignment.reviewOverdue = weekEnd.getTime() < Date.now();
+    } else {
+      assignment.reviewOverdue = false;
+    }
+    return assignment;
+  }
+
   async findByWeek(weekStartDate: string): Promise<(TargetEntity & { assignments: TargetAssignmentEntity[] })[]> {
     const targets = await this.targetsRepo.find({ where: { weekStartDate }, order: { createdAt: 'ASC' } });
     const results = [];
     for (const target of targets) {
       const assignments = await this.assignmentsRepo.find({ where: { targetId: target.id } });
-      results.push({ ...target, assignments });
+      const withOverdue = assignments.map((a) => this.withReviewOverdue(a, target.weekStartDate));
+      results.push({ ...target, assignments: withOverdue });
     }
     return results as (TargetEntity & { assignments: TargetAssignmentEntity[] })[];
   }

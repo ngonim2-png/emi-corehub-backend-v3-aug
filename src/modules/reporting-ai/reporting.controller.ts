@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ReportingService } from './reporting.service';
 import { AskAiDto } from './dto/ask-ai.dto';
@@ -20,6 +20,9 @@ export class RegulatoryReportController {
   @Get('regulatory-summary')
   @Roles('Super Admin', 'Finance Manager', 'Internal Auditor')
   async regulatorySummary(@Query('period') period: string) {
+    if (!period || !/^\d{4}-\d{2}$/.test(period)) {
+      throw new BadRequestException('period is required and must be in YYYY-MM format.');
+    }
     return this.reportingService.regulatorySummary(period);
   }
 }

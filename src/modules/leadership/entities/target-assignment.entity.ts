@@ -40,4 +40,7 @@ export class TargetAssignmentEntity {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  /** Same reasoning as Goal's own reviewOverdue - computed live, never persisted, and never overrides the actual Set/Achieved/Missed judgment call. */
+  reviewOverdue?: boolean;
 }

@@ -70,6 +70,33 @@ export class PolicyEntity {
   @Column({ default: false })
   policyNumberLocked: boolean;
 
+  /**
+   * Who is actually insured under this policy - null means "same as
+   * the policyholder" (the common case for self-insured plans). Set
+   * explicitly when the policyholder is buying cover on someone else's
+   * life, e.g. a parent insuring a child under an education plan: the
+   * parent is the Policyholder/Assured, the child is the Life Assured.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  insuredName: string | null;
+
+  @Column({ type: 'date', nullable: true })
+  insuredDob: string | null;
+
+  /**
+   * The PIN issued by the Accountant General's office for premium
+   * deduction straight from a civil servant's government salary.
+   * Optional and not tied to any one product - most common on Civil
+   * Servant Super Savings, but any product can have a civil-servant
+   * client paying this way.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  payrollPinCode: string | null;
+
+  /** External broker who sourced this policy, e.g. "UBS" - not an internal marketer/agent account (that's agentId elsewhere), just a text reference. */
+  @Column({ type: 'varchar', nullable: true })
+  brokerName: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

@@ -15,10 +15,11 @@ export class MeetingsController {
   async create(
     @Body('type') type: MeetingType,
     @Body('date') date: string,
+    @Body('time') time: string | undefined,
     @Body('notes') notes: string | undefined,
     @CurrentUser() actor: AuthenticatedUser,
   ) {
-    return this.meetingsService.create({ type, date, notes }, actor);
+    return this.meetingsService.create({ type, date, time, notes }, actor);
   }
 
   @Get()

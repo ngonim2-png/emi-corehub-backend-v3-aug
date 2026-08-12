@@ -76,7 +76,12 @@ export class ClientProfileController {
           sumAssured: Number(policy.sumAssured),
           commencementDate: policy.commencementDate,
           maturityDate: policy.maturityDate,
-          status: computed.status,
+          // Cancelled is never derivable from payment history the way
+          // every other status is, so the stored value always wins here
+          // - same reasoning as excluding it from the nightly recompute
+          // job. Without this, a cancelled policy with no payment
+          // history would incorrectly display as Lapsed.
+          status: policy.status === 'Cancelled' ? 'Cancelled' : computed.status,
           totalOutstanding: Money.fromMinor(computed.totalOutstandingMinor).toMajor(),
           consecutiveUnpaidMonths: computed.consecutiveUnpaidMonths,
         };

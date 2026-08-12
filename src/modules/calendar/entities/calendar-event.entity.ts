@@ -1,7 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
 
 export type CalendarEventType = 'Meeting' | 'Negotiation' | 'Engagement' | 'Task' | 'Other';
-export type CalendarEventStatus = 'Scheduled' | 'Completed' | 'Cancelled';
+export type CalendarEventStatus = 'Scheduled' | 'Completed' | 'Cancelled' | 'Missed';
 
 /**
  * Meetings, ongoing negotiations, client engagements - anything with a
