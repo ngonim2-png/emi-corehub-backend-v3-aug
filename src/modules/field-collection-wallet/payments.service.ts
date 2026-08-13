@@ -188,6 +188,38 @@ export class PaymentsService {
   }
 
   /**
+   * The batched equivalent of getPaymentsByMonthForPolicy - one query
+   * for every policy's payment history instead of one query per
+   * policy. This matters a lot in practice: a report that lists every
+   * policy (Register, Dashboard, Collection, Unpaid, Lapse, Claims all
+   * share this same underlying report) was issuing one database
+   * round-trip per policy, which was fine at demo scale but became a
+   * real production problem once real imports pushed the policy count
+   * into the thousands - each round-trip's network latency added up
+   * to a request that could take longer than the frontend's own
+   * timeout, even though the database itself was healthy the whole
+   * time.
+   */
+  async getPaymentsByMonthForPolicies(policyIds: string[]): Promise<Map<string, Record<string, number>>> {
+    const result = new Map<string, Record<string, number>>();
+    if (policyIds.length === 0) return result;
+    const rows: { policyId: string; paymentMonth: string; total: string }[] = await this.paymentsRepo
+      .createQueryBuilder('payment')
+      .select('payment.policyId', 'policyId')
+      .addSelect('payment.paymentMonth', 'paymentMonth')
+      .addSelect('COALESCE(SUM(payment.amount), 0)', 'total')
+      .where('payment.policyId IN (:...policyIds)', { policyIds })
+      .groupBy('payment.policyId')
+      .addGroupBy('payment.paymentMonth')
+      .getRawMany();
+    for (const row of rows) {
+      if (!result.has(row.policyId)) result.set(row.policyId, {});
+      result.get(row.policyId)![row.paymentMonth] = Number(row.total);
+    }
+    return result;
+  }
+
+  /**
    * Reversal is a new, linked row - the original payment is never edited
    * or deleted, so it stays visible in the audit trail exactly as the
    * specification requires. Requires supervisor/finance approval, enforced

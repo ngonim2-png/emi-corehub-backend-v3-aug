@@ -81,9 +81,10 @@ export class PoliciesController {
     const month = reportingMonth ?? new Date().toISOString().slice(0, 7);
 
     const policies = await this.policiesService.findAllWithClientAndProduct();
+    const paymentsByPolicy = await this.paymentsService.getPaymentsByMonthForPolicies(policies.map((p) => p.id));
     const results = [];
     for (const policy of policies) {
-      const paymentsByMonthMajor = await this.paymentsService.getPaymentsByMonthForPolicy(policy.id);
+      const paymentsByMonthMajor = paymentsByPolicy.get(policy.id) ?? {};
       const paymentsByMonth: Record<string, number> = {};
       for (const [m, major] of Object.entries(paymentsByMonthMajor)) {
         paymentsByMonth[m] = Money.fromMajor(major).toMinor();
