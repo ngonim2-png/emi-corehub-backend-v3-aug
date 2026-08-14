@@ -2,8 +2,9 @@ import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AuditLog } from '../../common/decorators/audit-log.decorator';
+import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { HrService } from './hr.service';
-import { CreateEmployeeDto, CreateLeaveRequestDto, DecideLeaveRequestDto, MarkAttendanceDto } from './dto/hr.dto';
+import { CreateEmployeeDto, CreateLeaveRequestDto, DecideLeaveRequestDto, MarkAttendanceDto, CreateOwnLeaveRequestDto } from './dto/hr.dto';
 import { buildExcelExport } from '../../common/utils/excel-export.util';
 import { sendExcelFile } from '../../common/utils/send-excel-file.util';
 
@@ -49,6 +50,26 @@ export class HrController {
   @Get('leave-requests')
   async findLeaveRequests() {
     return this.hrService.findLeaveRequests();
+  }
+
+  /**
+   * Self-service leave, open to every logged-in staff member regardless
+   * of role - @Roles() with no arguments overrides the class-level
+   * restriction (RolesGuard checks the route's own metadata first).
+   * The employee link is resolved automatically from the account
+   * making the request, not passed in - nobody using this can submit
+   * leave on someone else's behalf.
+   */
+  @Post('leave-requests/mine')
+  @Roles()
+  async requestOwnLeave(@Body() dto: CreateOwnLeaveRequestDto, @CurrentUser() actor: AuthenticatedUser) {
+    return this.hrService.requestOwnLeave(actor, dto);
+  }
+
+  @Get('leave-requests/mine')
+  @Roles()
+  async findOwnLeaveRequests(@CurrentUser() actor: AuthenticatedUser) {
+    return this.hrService.findOwnLeaveRequests(actor);
   }
 
   @Post('leave-requests/:id/decision')

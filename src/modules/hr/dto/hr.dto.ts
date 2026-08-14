@@ -43,3 +43,14 @@ export class MarkAttendanceDto {
   @IsIn(['Present', 'Absent', 'Late', 'On Leave'])
   status: 'Present' | 'Absent' | 'Late' | 'On Leave';
 }
+
+export class CreateOwnLeaveRequestDto {
+  @IsString()
+  type: string;
+
+  @IsDateString()
+  fromDate: string;
+
+  @IsDateString()
+  toDate: string;
+}

@@ -7,6 +7,8 @@ const PAYMENT_METHODS = [
   'Cash Office Payment',
   'Payroll Deduction',
   'Direct Debit',
+  'Standing Order',
+  'Employer Payroll Deduction',
 ];
 
 export class PostPaymentDto {

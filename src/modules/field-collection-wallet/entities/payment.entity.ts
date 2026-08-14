@@ -15,7 +15,9 @@ export type PaymentMethod =
   | 'Bank Transfer'
   | 'Cash Office Payment'
   | 'Payroll Deduction'
-  | 'Direct Debit';
+  | 'Direct Debit'
+  | 'Standing Order'
+  | 'Employer Payroll Deduction';
 
 @Entity('payments')
 export class PaymentEntity {
