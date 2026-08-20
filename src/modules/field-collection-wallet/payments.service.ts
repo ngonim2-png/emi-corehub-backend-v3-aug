@@ -105,6 +105,55 @@ export class PaymentsService {
     return saved;
   }
 
+  /**
+   * For backfilling office payments from months before the system was
+   * in use, or that were simply never entered. Each row goes through
+   * the exact same postPayment() every other payment in this system
+   * goes through - same idempotency protection (a deterministic key
+   * built from policy + month + amount, so re-uploading the same file
+   * twice never double-posts), same wallet effects, same policy status
+   * recomputation. This is what actually makes a bulk-uploaded payment
+   * "populate to the respective customer" rather than sit as an
+   * orphaned row somewhere: it's a real payment against a real policy,
+   * so it shows up on the client's profile and payment history exactly
+   * like any other payment would.
+   */
+  async bulkUploadPayments(
+    rows: { policyNo: string; paymentMonth: string; amount: number; paymentMethod: string }[],
+    actor: AuthenticatedUser,
+  ): Promise<{ posted: number; alreadyPosted: number; unmatchedPolicy: string[]; failed: { row: number; reason: string }[] }> {
+    let posted = 0;
+    let alreadyPosted = 0;
+    const unmatchedPolicy: string[] = [];
+    const failed: { row: number; reason: string }[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const policy = await this.policiesRepo.findOne({ where: { policyNo: row.policyNo } });
+      if (!policy) {
+        unmatchedPolicy.push(row.policyNo);
+        continue;
+      }
+      const idempotencyKey = `bulk-office-payment-${row.policyNo}-${row.paymentMonth}-${row.amount}`;
+      const existing = await this.paymentsRepo.findOne({ where: { idempotencyKey } });
+      if (existing) {
+        alreadyPosted++;
+        continue;
+      }
+      try {
+        await this.postPayment(
+          { policyId: policy.id, paymentMonth: row.paymentMonth, amount: row.amount, paymentMethod: row.paymentMethod },
+          idempotencyKey,
+          actor,
+        );
+        posted++;
+      } catch (error) {
+        failed.push({ row: i + 2, reason: (error as Error).message }); // +2: header row + 1-indexing
+      }
+    }
+    return { posted, alreadyPosted, unmatchedPolicy, failed };
+  }
+
   async findByPolicy(policyId: string): Promise<PaymentEntity[]> {
     return this.paymentsRepo.find({
       where: { policy: { id: policyId } },
