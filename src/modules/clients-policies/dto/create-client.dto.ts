@@ -12,6 +12,18 @@ export class CreateClientDto {
   @IsString()
   dob?: string;
 
+  @IsOptional()
+  @IsString()
+  maritalStatus?: string;
+
+  @IsOptional()
+  @IsString()
+  nationality?: string;
+
+  @IsOptional()
+  @IsString()
+  placeOfBirth?: string;
+
   @IsString()
   phone: string;
 

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Res, UploadedFile, UseInterceptors, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -12,6 +13,8 @@ import { computePolicyStatus } from './policy-status.util';
 import { Money } from '../../common/utils/money.util';
 import { buildExcelExport } from '../../common/utils/excel-export.util';
 import { sendExcelFile } from '../../common/utils/send-excel-file.util';
+
+const MAX_APPLICATION_FORM_BYTES = 10 * 1024 * 1024; // scanned/photographed multi-page forms can run larger than a simple profile photo
 
 @Controller('policies')
 export class PoliciesController {
@@ -127,6 +130,21 @@ export class PoliciesController {
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.policiesService.findOne(id);
+  }
+
+  @Post(':id/application-form')
+  @AuditLog({ action: 'policy.application_form_uploaded', entityType: 'policy' })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_APPLICATION_FORM_BYTES } }))
+  async uploadApplicationForm(@Param('id') id: string, @UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('No file was uploaded.');
+    return this.policiesService.uploadApplicationForm(id, file.buffer, file.originalname, file.mimetype);
+  }
+
+  @Get(':id/application-form')
+  async downloadApplicationForm(@Param('id') id: string, @Res() res: Response) {
+    const { buffer, mimeType } = await this.policiesService.downloadApplicationForm(id);
+    res.set({ 'Content-Type': mimeType, 'Cache-Control': 'private, max-age=3600' });
+    res.send(buffer);
   }
 
   @Post(':id/edit')

@@ -36,5 +36,6 @@ import { SchedulerService } from './scheduler.service';
     LifecycleTriggersProcessor,
     SchedulerService,
   ],
+  exports: [Ifrs17BatchCloseProcessor],
 })
 export class JobsModule {}

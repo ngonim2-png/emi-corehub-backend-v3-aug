@@ -76,6 +76,7 @@ export class ClientProfileController {
           sumAssured: Number(policy.sumAssured),
           commencementDate: policy.commencementDate,
           maturityDate: policy.maturityDate,
+          hasApplicationForm: !!policy.applicationFormStorageKey,
           // Cancelled is never derivable from payment history the way
           // every other status is, so the stored value always wins here
           // - same reasoning as excluding it from the nightly recompute

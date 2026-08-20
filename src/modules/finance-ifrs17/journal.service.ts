@@ -190,8 +190,44 @@ export class JournalService {
     return closed;
   }
 
-  async findClosedPeriods(): Promise<AccountingPeriodEntity[]> {
-    return this.periodsRepo.find({ order: { period: 'DESC' } });
+  async findClosedPeriods(month?: string): Promise<AccountingPeriodEntity[]> {
+    return this.periodsRepo.find({ where: month ? { period: month } : {}, order: { period: 'DESC' } });
+  }
+
+  /**
+   * For backfilling months from before the system was in use - reuses
+   * the exact same post() validation (balance check, period-lock,
+   * audit trail) every other entry goes through, just with a distinct
+   * sourceModule so these land as 'Posted' directly rather than
+   * 'Pending Approval'. That's a deliberate choice, not a shortcut:
+   * the review here happens once, on the whole file, by the person
+   * uploading it (who must already hold approval authority - see the
+   * controller) - not per-row through the UI, which would make
+   * backfilling months of real history impractical.
+   */
+  async bulkUploadHistoricalEntries(
+    rows: { date: string; narration: string; debitAccountCode: string; creditAccountCode: string; amount: number }[],
+    actor: AuthenticatedUser,
+  ): Promise<{ created: number; failed: { row: number; reason: string }[] }> {
+    let created = 0;
+    const failed: { row: number; reason: string }[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        await this.post(
+          row.date, row.narration,
+          [
+            { accountCode: row.debitAccountCode, debit: row.amount, credit: 0 },
+            { accountCode: row.creditAccountCode, debit: 0, credit: row.amount },
+          ],
+          'bulk-historical-upload', null, actor,
+        );
+        created++;
+      } catch (error) {
+        failed.push({ row: i + 2, reason: (error as Error).message }); // +2: header row + 1-indexing
+      }
+    }
+    return { created, failed };
   }
   async findRecent(limit = 100, from?: string, to?: string): Promise<JournalEntryEntity[]> {
     const qb = this.journalRepo

@@ -16,6 +16,9 @@ export class ChartOfAccountEntity {
   @Column()
   type: AccountType;
 
+  @Column({ type: 'text', nullable: true })
+  description: string | null;
+
   @ManyToOne(() => ChartOfAccountEntity, { nullable: true })
   parent: ChartOfAccountEntity | null;
 }

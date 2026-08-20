@@ -19,6 +19,8 @@ export class BeneficiariesService {
         client,
         name: dto.name,
         relationship: dto.relationship,
+        dateOfBirth: dto.dateOfBirth ?? null,
+        address: dto.address,
         phone: dto.phone,
         sharePct: (dto.sharePct ?? 100).toFixed(2),
       }),

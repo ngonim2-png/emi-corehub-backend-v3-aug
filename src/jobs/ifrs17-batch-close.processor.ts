@@ -57,7 +57,7 @@ export class Ifrs17BatchCloseProcessor extends WorkerHost {
 
   async process(job: Job<{ period: string }>): Promise<void> {
     if (job.name !== 'ifrs17-batch-close') return;
-    const { period } = job.data;
+    const period = this.resolvePeriod(job.data.period);
 
     const groups = await this.groupsRepo.find({ relations: ['product'] });
     for (const group of groups) {
@@ -73,6 +73,45 @@ export class Ifrs17BatchCloseProcessor extends WorkerHost {
       }
     }
     this.logger.log(`IFRS 17 batch close completed for ${groups.length} group(s), period ${period}`);
+  }
+
+  /**
+   * This is a *repeating* scheduled job (see scheduler.service.ts) -
+   * the same job data payload is reused for every future run, so
+   * computing "last month" once at registration time would only ever
+   * be correct for the very first run and wrong forever after. The
+   * literal token 'previous-month' is resolved fresh every time this
+   * actually processes instead. Confirmed bug fixed here: this
+   * resolution never existed before, so every scheduled run was
+   * comparing against the literal string "previous-month" itself,
+   * which never matches any real payment or claim date - the
+   * scheduled close has been aggregating zero real data since it was
+   * built. A manual trigger (see the controller) passes an explicit
+   * YYYY-MM period directly and bypasses this resolution entirely.
+   */
+  private resolvePeriod(raw: string): string {
+    if (raw !== 'previous-month') return raw;
+    const now = new Date();
+    const prevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    return `${prevMonth.getUTCFullYear()}-${String(prevMonth.getUTCMonth() + 1).padStart(2, '0')}`;
+  }
+
+  /** Exposed for the manual "run now" trigger - a real period is required, no 'previous-month' resolution here since a manual run should be explicit about which month it's closing. */
+  async runForPeriod(period: string): Promise<{ groupsProcessed: number; failures: number }> {
+    const groups = await this.groupsRepo.find({ relations: ['product'] });
+    let failures = 0;
+    for (const group of groups) {
+      try {
+        await this.closeGroupPeriod(group, period);
+      } catch (error) {
+        this.logger.error(
+          `IFRS 17 manual close failed for group ${group.id} (${group.product?.name}, cohort ${group.cohortYear}), period ${period}`,
+          error as Error,
+        );
+        failures++;
+      }
+    }
+    return { groupsProcessed: groups.length, failures };
   }
 
   private async closeGroupPeriod(group: Ifrs17GroupEntity, period: string): Promise<void> {

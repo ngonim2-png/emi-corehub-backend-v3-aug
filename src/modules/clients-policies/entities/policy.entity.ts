@@ -83,6 +83,24 @@ export class PolicyEntity {
   @Column({ type: 'date', nullable: true })
   insuredDob: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  insuredSex: string | null;
+
+  /** e.g. "Son", "Daughter" - the real physical forms ask for this explicitly alongside the life assured's other details. */
+  @Column({ type: 'varchar', nullable: true })
+  insuredRelationship: string | null;
+
+  /** Specific to education-type plans (the life assured's school) but kept as a generic text field rather than product-specific, matching how other optional fields here work. */
+  @Column({ type: 'varchar', nullable: true })
+  insuredSchool: string | null;
+
+  /** A photo/scan of the physical, signed application form - same FileStorageAdapter pattern as the client photo. Attached to the policy rather than the client, since the form itself is about one specific plan being applied for. */
+  @Column({ type: 'varchar', nullable: true })
+  applicationFormStorageKey: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  applicationFormMimeType: string | null;
+
   /**
    * The PIN issued by the Accountant General's office for premium
    * deduction straight from a civil servant's government salary.

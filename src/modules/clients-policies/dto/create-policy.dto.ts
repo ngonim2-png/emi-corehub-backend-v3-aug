@@ -38,5 +38,17 @@ export class CreatePolicyDto {
 
   @IsOptional()
   @IsString()
+  insuredSex?: string;
+
+  @IsOptional()
+  @IsString()
+  insuredRelationship?: string;
+
+  @IsOptional()
+  @IsString()
+  insuredSchool?: string;
+
+  @IsOptional()
+  @IsString()
   payrollPinCode?: string;
 }

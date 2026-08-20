@@ -36,6 +36,16 @@ export class ClientEntity {
   @Column({ type: 'date', nullable: true })
   dob: string | null;
 
+  @Column({ nullable: true })
+  maritalStatus: string;
+
+  @Column({ nullable: true })
+  nationality: string;
+
+  /** Distinct from date of birth - both appear separately on the real physical application forms. */
+  @Column({ nullable: true })
+  placeOfBirth: string;
+
   @Column()
   phone: string;
 

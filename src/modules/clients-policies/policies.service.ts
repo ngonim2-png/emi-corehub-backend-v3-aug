@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Not } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -10,6 +10,7 @@ import { DomainEvents, PolicyStatusChangedEvent } from '../../common/events/doma
 import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { computePolicyStatus } from './policy-status.util';
+import { FILE_STORAGE, FileStorageAdapter } from '../documents/adapters/file-storage.adapter';
 
 @Injectable()
 export class PoliciesService {
@@ -20,6 +21,7 @@ export class PoliciesService {
     private readonly dataSource: DataSource,
     private readonly auditService: AuditService,
     private readonly eventEmitter: EventEmitter2,
+    @Inject(FILE_STORAGE) private readonly storage: FileStorageAdapter,
   ) {}
 
   async create(dto: CreatePolicyDto): Promise<PolicyEntity> {
@@ -38,6 +40,9 @@ export class PoliciesService {
       status: 'Not Yet Commenced',
       insuredName: dto.insuredName ?? null,
       insuredDob: dto.insuredDob ?? null,
+      insuredSex: dto.insuredSex ?? null,
+      insuredRelationship: dto.insuredRelationship ?? null,
+      insuredSchool: dto.insuredSchool ?? null,
       payrollPinCode: dto.payrollPinCode ?? null,
     });
     const saved = await this.policiesRepo.save(policy);
@@ -49,6 +54,24 @@ export class PoliciesService {
     const policy = await this.policiesRepo.findOne({ where: { id } });
     if (!policy) throw new NotFoundException('Policy not found');
     return policy;
+  }
+
+  /** A photo/scan of the physical, signed application form - same pattern as ClientsService.uploadPhoto. */
+  async uploadApplicationForm(id: string, buffer: Buffer, originalFilename: string, mimeType: string): Promise<PolicyEntity> {
+    const policy = await this.findOne(id);
+    if (policy.applicationFormStorageKey) {
+      await this.storage.delete(policy.applicationFormStorageKey).catch(() => undefined);
+    }
+    const stored = await this.storage.save(buffer, originalFilename, mimeType);
+    await this.policiesRepo.update(id, { applicationFormStorageKey: stored.storageKey, applicationFormMimeType: mimeType });
+    return this.findOne(id);
+  }
+
+  async downloadApplicationForm(id: string): Promise<{ buffer: Buffer; mimeType: string }> {
+    const policy = await this.findOne(id);
+    if (!policy.applicationFormStorageKey) throw new NotFoundException('This policy has no application form on file.');
+    const buffer = await this.storage.read(policy.applicationFormStorageKey);
+    return { buffer, mimeType: policy.applicationFormMimeType || 'application/octet-stream' };
   }
 
   /** Same data-correction escape hatch as ClientsService.editFields - a real admin override, not a workflow transition. */

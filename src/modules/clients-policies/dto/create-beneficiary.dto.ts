@@ -1,4 +1,4 @@
-import { IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsDateString, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateBeneficiaryDto {
   @IsUUID()
@@ -10,6 +10,14 @@ export class CreateBeneficiaryDto {
   @IsOptional()
   @IsString()
   relationship?: string;
+
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
 
   @IsOptional()
   @IsString()

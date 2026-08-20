@@ -15,6 +15,12 @@ export class BeneficiaryEntity {
   @Column({ nullable: true })
   relationship: string;
 
+  @Column({ type: 'date', nullable: true })
+  dateOfBirth: string | null;
+
+  @Column({ nullable: true })
+  address: string;
+
   @Column({ nullable: true })
   phone: string;
 
