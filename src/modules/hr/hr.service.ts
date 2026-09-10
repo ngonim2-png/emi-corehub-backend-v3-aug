@@ -42,7 +42,7 @@ export class HrService {
   }
 
   async findLeaveRequests(): Promise<LeaveRequestEntity[]> {
-    return this.leaveRepo.find({ order: { createdAt: 'DESC' } });
+    return this.leaveRepo.find({ order: { createdAt: 'DESC' }, relations: ['employee'] });
   }
 
   /**

@@ -68,20 +68,28 @@ export class LeadershipReportsController {
   @Get('appraisal/export')
   async appraisalExport(@Query('userId') userId: string, @Query('month') month: string, @Res() res: Response) {
     const report = await this.reportsService.appraisalReport(userId, month);
+    const rows: Record<string, string | number | null>[] = [
+      ...report.assignments.map((a) => ({
+        type: 'Target', item: a.targetDescription, dueOrWeek: a.weekStartDate, status: a.status,
+        targetValue: a.targetValue ?? null, actualValue: a.actualValue ?? null, unit: a.unit ?? '',
+      })),
+      ...report.actionItemsDetail.map((ai) => ({
+        type: 'Action item', item: ai.title, dueOrWeek: ai.dueDate, status: ai.status,
+        targetValue: null, actualValue: null, unit: '',
+      })),
+    ];
     const buffer = await buildExcelExport(
       'Appraisal',
       [
-        { header: 'Target', key: 'targetDescription', width: 32 },
-        { header: 'Week', key: 'weekStartDate', width: 14 },
+        { header: 'Type', key: 'type', width: 12 },
+        { header: 'Item', key: 'item', width: 32 },
+        { header: 'Week / Due', key: 'dueOrWeek', width: 14 },
         { header: 'Status', key: 'status', width: 12 },
         { header: 'Target Value', key: 'targetValue', width: 14, numeric: true },
         { header: 'Actual Value', key: 'actualValue', width: 14, numeric: true },
         { header: 'Unit', key: 'unit', width: 10 },
       ],
-      report.assignments.map((a) => ({
-        targetDescription: a.targetDescription, weekStartDate: a.weekStartDate, status: a.status,
-        targetValue: a.targetValue ?? '', actualValue: a.actualValue ?? '', unit: a.unit ?? '',
-      })),
+      rows,
       `Appraisal Report — ${month} (KPI: ${report.kpiPercent !== null ? (report.kpiPercent * 100).toFixed(0) + '%' : 'N/A'})`,
     );
     sendExcelFile(res, buffer, `appraisal-${userId}-${month}.xlsx`);

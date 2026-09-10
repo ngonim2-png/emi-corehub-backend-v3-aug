@@ -75,21 +75,49 @@ export class LeadershipReportsService {
     const monthStart = `${month}-01`;
     const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
     const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`;
+
     const assignments = await this.targetsService.findAssignmentsForPerson(userId, monthStart, monthEnd);
-    const achieved = assignments.filter((a) => a.status === 'Achieved');
-    const missed = assignments.filter((a) => a.status === 'Missed');
-    const stillOpen = assignments.filter((a) => a.status === 'Set');
+    const targetsAchieved = assignments.filter((a) => a.status === 'Achieved');
+    const targetsMissed = assignments.filter((a) => a.status === 'Missed');
+    const targetsOpen = assignments.filter((a) => a.status === 'Set');
+
+    // Action items are genuinely per-person (assignedTo), unlike Goals -
+    // same reasoning weeklyReport() already uses for connecting them.
+    const allActionItems = await this.actionItemsRepo.find({ where: { assignedTo: userId }, order: { dueDate: 'ASC' } });
+    const actionItems = allActionItems.filter((ai) => ai.dueDate >= monthStart && ai.dueDate <= monthEnd);
+    const actionsCompleted = actionItems.filter((ai) => ai.status === 'Completed');
+    const actionsMissed = actionItems.filter((ai) => ai.status === 'Missed');
+    const actionsOpen = actionItems.filter((ai) => ai.status === 'Open');
+
+    // Goals are org-wide, not assigned to any one person, so they're
+    // shown as context for the month rather than folded into this
+    // person's own achieved/missed counts.
+    const goals = await this.goalsRepo.find({ where: { month } });
+
+    const totalScored = assignments.length + actionItems.length;
+    const totalAchieved = targetsAchieved.length + actionsCompleted.length;
+    const totalMissed = targetsMissed.length + actionsMissed.length;
+    const totalOpen = targetsOpen.length + actionsOpen.length;
+
     return {
       userId, month,
-      assignmentsTotal: assignments.length,
-      achieved: achieved.length,
-      missed: missed.length,
-      stillOpen: stillOpen.length,
-      kpiPercent: assignments.length > 0 ? achieved.length / assignments.length : null,
+      assignmentsTotal: totalScored,
+      achieved: totalAchieved,
+      missed: totalMissed,
+      stillOpen: totalOpen,
+      kpiPercent: totalScored > 0 ? totalAchieved / totalScored : null,
+      targets: {
+        total: assignments.length, achieved: targetsAchieved.length, missed: targetsMissed.length, stillOpen: targetsOpen.length,
+      },
+      actionItems: {
+        total: actionItems.length, completed: actionsCompleted.length, missed: actionsMissed.length, stillOpen: actionsOpen.length,
+      },
+      goalsForMonth: goals.map((g) => ({ description: g.description, status: g.status })),
       assignments: assignments.map((a) => ({
         targetDescription: a.target.description, weekStartDate: a.target.weekStartDate,
         status: a.status, targetValue: a.target.targetValue, actualValue: a.actualValue, unit: a.target.unit,
       })),
+      actionItemsDetail: actionItems.map((ai) => ({ title: ai.title, dueDate: ai.dueDate, status: ai.status })),
     };
   }
 

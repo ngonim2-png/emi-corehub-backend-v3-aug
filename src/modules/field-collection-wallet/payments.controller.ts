@@ -14,52 +14,102 @@ import { sendExcelFile } from '../../common/utils/send-excel-file.util';
 
 const MAX_PAYMENT_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+const MONTH_NAME_TO_NUM: Record<string, number> = {
+  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
+  may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+};
+
 /**
- * Standard template for backfilling office payments: Policy Number,
- * Payment Month, Amount, Payment Method - one row per payment, matched
- * by header label like every other bulk import in this system.
+ * The real payment-mode values seen in EMI's own premium payment hub
+ * file, mapped to this system's payment methods. "Pincode" rows are
+ * deliberately skipped rather than mapped to Payroll Deduction - those
+ * are civil-servant payments collected through the Accountant
+ * General's monthly deduction file, which already has its own import
+ * pipeline (deduction-import). Including them here risked posting the
+ * same real payment twice through two different upload paths.
+ */
+function mapPaymentMode(raw: string): string | null {
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'cash') return 'Cash Office Payment';
+  if (normalized === 'orange money' || normalized === 'moneymi') return 'Mobile Money';
+  if (normalized === 'pincode') return null;
+  return null;
+}
+
+/**
+ * EMI's real "Premium Payment Hub" format: one sheet per month, header
+ * row at row 3 (title + blank row above it), columns Policy No,
+ * Amount, Month Paid For (a text month name, no year - the actual
+ * premium month a payment covers, which is often a different, earlier
+ * month than the sheet it was recorded in for late payments), and
+ * Payment Mode. The year isn't present anywhere parseable in the file
+ * itself, so it's supplied explicitly by whoever uploads it rather
+ * than guessed.
  */
 async function parsePaymentsFile(
   buffer: Buffer,
-): Promise<{ policyNo: string; paymentMonth: string; amount: number; paymentMethod: string }[]> {
+  year: number,
+): Promise<{ rows: { policyNo: string; paymentMonth: string; amount: number; paymentMethod: string }[]; skippedPincode: number; skippedUnrecognizedMonth: string[] }> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer as any);
-  const ws = wb.worksheets[0];
-  if (!ws) throw new BadRequestException('That file has no worksheet to read.');
-  const headerRow = ws.getRow(1);
-  const col: Record<string, number> = {};
-  for (let c = 1; c <= headerRow.cellCount; c++) {
-    const v = headerRow.getCell(c).value;
-    if (v) col[String(v).trim().toLowerCase()] = c;
-  }
-  const cPolicy = col['policy number'] ?? col['policy no'] ?? col['policy no.'];
-  const cMonth = col['payment month'] ?? col['month'];
-  const cAmount = col['amount'];
-  const cMethod = col['payment method'] ?? col['method'];
-  if (!cPolicy || !cMonth || !cAmount || !cMethod) {
-    throw new BadRequestException(
-      'Expected columns "Policy Number", "Payment Month" (YYYY-MM), "Amount", and "Payment Method" were not found.',
-    );
-  }
+  if (wb.worksheets.length === 0) throw new BadRequestException('That file has no worksheets to read.');
+
   const rows: { policyNo: string; paymentMonth: string; amount: number; paymentMethod: string }[] = [];
-  for (let r = 2; r <= ws.rowCount; r++) {
-    const row = ws.getRow(r);
-    const policyCell = row.getCell(cPolicy).value;
-    if (!policyCell) continue;
-    const monthCell = row.getCell(cMonth).value;
-    const paymentMonth = monthCell instanceof Date
-      ? `${monthCell.getUTCFullYear()}-${String(monthCell.getUTCMonth() + 1).padStart(2, '0')}`
-      : String(monthCell ?? '').trim();
-    const amountCell = row.getCell(cAmount).value;
-    const amount = typeof amountCell === 'number' ? amountCell : parseFloat(String(amountCell));
-    rows.push({
-      policyNo: String(policyCell).trim(),
-      paymentMonth,
-      amount: isNaN(amount) ? 0 : amount,
-      paymentMethod: String(row.getCell(cMethod).value ?? '').trim(),
-    });
+  let skippedPincode = 0;
+  const skippedUnrecognizedMonth: string[] = [];
+
+  for (const ws of wb.worksheets) {
+    // Header row is at row 3 in every real sheet seen - but matched by
+    // label, not assumed, in case a future export shifts it.
+    let headerRowNum = 3;
+    let col: Record<string, number> = {};
+    for (let r = 1; r <= Math.min(ws.rowCount, 5); r++) {
+      const headerRow = ws.getRow(r);
+      const candidate: Record<string, number> = {};
+      for (let c = 1; c <= headerRow.cellCount; c++) {
+        const v = headerRow.getCell(c).value;
+        if (v) candidate[String(v).trim().toLowerCase()] = c;
+      }
+      if (candidate['policy no'] || candidate['policy number']) {
+        col = candidate;
+        headerRowNum = r;
+        break;
+      }
+    }
+    const cPolicy = col['policy no'] ?? col['policy number'];
+    const cAmount = col['amount'];
+    const cMonth = col['month paid for'] ?? col['month'];
+    const cMode = col['payment mode'] ?? col['payment mode '] ?? col['mode'];
+    if (!cPolicy || !cAmount || !cMonth || !cMode) continue; // not a real data sheet - skip quietly
+
+    for (let r = headerRowNum + 1; r <= ws.rowCount; r++) {
+      const row = ws.getRow(r);
+      const policyCell = row.getCell(cPolicy).value;
+      if (!policyCell) continue;
+      const amountCell = row.getCell(cAmount).value;
+      const amount = typeof amountCell === 'number' ? amountCell : parseFloat(String(amountCell));
+      const monthText = String(row.getCell(cMonth).value ?? '').trim().toLowerCase();
+      const monthNum = MONTH_NAME_TO_NUM[monthText];
+      if (!monthNum) {
+        skippedUnrecognizedMonth.push(`row with policy ${String(policyCell).trim()}: "${monthText}"`);
+        continue;
+      }
+      const modeCell = String(row.getCell(cMode).value ?? '').trim();
+      const paymentMethod = mapPaymentMode(modeCell);
+      if (!paymentMethod) {
+        if (modeCell.toLowerCase() === 'pincode') skippedPincode++;
+        continue;
+      }
+      rows.push({
+        policyNo: String(policyCell).trim(),
+        paymentMonth: `${year}-${String(monthNum).padStart(2, '0')}`,
+        amount: isNaN(amount) ? 0 : amount,
+        paymentMethod,
+      });
+    }
   }
-  return rows;
+  return { rows, skippedPincode, skippedUnrecognizedMonth };
 }
 
 @Controller('payments')
@@ -70,13 +120,22 @@ export class PaymentsController {
   @Roles('Super Admin', 'Finance Manager')
   @AuditLog({ action: 'payment.bulk_historical_upload', entityType: 'payment' })
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_PAYMENT_UPLOAD_BYTES } }))
-  async bulkUpload(@UploadedFile() file: Express.Multer.File, @CurrentUser() actor: AuthenticatedUser) {
+  async bulkUpload(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('year') yearRaw: string | undefined,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
     if (!file) throw new BadRequestException('No file was uploaded.');
-    const rows = await parsePaymentsFile(file.buffer);
-    if (rows.length === 0) {
-      throw new BadRequestException('No valid rows were found - check the file has Policy Number, Payment Month, Amount, and Payment Method columns.');
+    const year = yearRaw ? parseInt(yearRaw, 10) : new Date().getFullYear();
+    if (isNaN(year) || year < 2000 || year > 2100) {
+      throw new BadRequestException('year must be a valid 4-digit year.');
     }
-    return this.paymentsService.bulkUploadPayments(rows, actor);
+    const { rows, skippedPincode, skippedUnrecognizedMonth } = await parsePaymentsFile(file.buffer, year);
+    if (rows.length === 0 && skippedPincode === 0) {
+      throw new BadRequestException('No valid rows were found - check the file has "Policy No", "Amount", "Month Paid For", and "Payment Mode" columns.');
+    }
+    const result = await this.paymentsService.bulkUploadPayments(rows, actor);
+    return { ...result, skippedPincode, skippedUnrecognizedMonth };
   }
 
   @Post()
