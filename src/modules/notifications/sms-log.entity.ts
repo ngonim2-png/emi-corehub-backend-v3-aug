@@ -21,7 +21,7 @@ export class SmsLogEntity {
   body: string;
 
   @Column({ default: 'Queued' })
-  status: 'Queued' | 'Sent' | 'Delivered' | 'Failed';
+  status: 'Pending' | 'Queued' | 'Sent' | 'Delivered' | 'Failed';
 
   @Column({ type: 'timestamptz', nullable: true })
   sentAt: Date | null;

@@ -227,6 +227,37 @@ export class FinancialReportsService {
    * which inverted the sign for any Equity account - fixed alongside
    * this).
    */
+  /**
+   * The individual transaction narrations behind one account's total on
+   * the financial statement - "what was this actually for", not just the
+   * account's own aggregate name. Kept separate from financialStatement()
+   * itself and only fetched when a person actually expands one account,
+   * rather than eagerly loading every line for every account on every
+   * page load.
+   */
+  async accountDetail(code: string, from?: string, to?: string) {
+    const lines = await this.journalLinesRepo.manager
+      .createQueryBuilder(JournalLineEntity, 'line')
+      .innerJoin('line.account', 'account')
+      .innerJoin('line.journalEntry', 'entry')
+      .select('entry.date', 'date')
+      .addSelect('entry.narration', 'narration')
+      .addSelect('line.debit', 'debit')
+      .addSelect('line.credit', 'credit')
+      .addSelect('entry.entryNo', 'entryNo')
+      .where('account.code = :code', { code })
+      .andWhere('entry.status = :status', { status: 'Posted' })
+      .andWhere(from ? 'entry.date >= :from' : '1=1', from ? { from } : {})
+      .andWhere(to ? 'entry.date <= :to' : '1=1', to ? { to } : {})
+      .orderBy('entry.date', 'DESC')
+      .getRawMany<{ date: string; narration: string; debit: string; credit: string; entryNo: string }>();
+    return lines.map((l) => ({
+      date: l.date, narration: l.narration, entryNo: l.entryNo,
+      amount: Number(l.debit) || Number(l.credit),
+      side: Number(l.debit) > 0 ? 'debit' : 'credit',
+    }));
+  }
+
   async financialStatement(from?: string, to?: string) {
     const [balances, accounts] = await Promise.all([
       this.journalLinesRepo.manager

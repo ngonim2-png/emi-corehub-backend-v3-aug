@@ -108,12 +108,28 @@ export class LifecycleTriggersService {
     }
   }
 
+  /**
+   * Automatic sending is gated behind sms.automaticEnabled (see
+   * configuration.ts) - off by default. While it's off, every message a
+   * trigger would have sent is recorded as Pending instead, so nothing is
+   * lost: it shows up in the SMS tab for a person to review and send
+   * manually. Once that setting is turned on, these triggers go straight
+   * through to actually sending, with no other change needed here.
+   */
+  private async dispatchSms(input: Parameters<NotificationsService['queueSms']>[0]) {
+    if (this.config.get<boolean>('sms.automaticEnabled')) {
+      await this.notificationsService.queueSms(input);
+    } else {
+      await this.notificationsService.logPendingSms(input);
+    }
+  }
+
   private async runNewClientWelcome(trigger: LifecycleTriggerEntity): Promise<number> {
     const clients = await this.clientsRepo.find({ where: { smsConsent: true } });
     let fired = 0;
     for (const client of clients) {
       if (await this.alreadyFired(trigger.id, client.id)) continue;
-      await this.notificationsService.queueSms({
+      await this.dispatchSms({
         toPhone: client.phone, relatedType: 'trigger', relatedId: trigger.id,
         templateCode: 'LIFECYCLE_WELCOME',
         body: this.renderTemplate(trigger.messageTemplate, { clientName: client.fullName }),
@@ -147,7 +163,7 @@ export class LifecycleTriggersService {
       );
       if (policy.status === 'Cancelled') continue;
       if (computed.status !== targetStatus) continue;
-      await this.notificationsService.queueSms({
+      await this.dispatchSms({
         toPhone: policy.client.phone, relatedType: 'trigger', relatedId: trigger.id,
         templateCode: targetStatus === 'Warning' ? 'LIFECYCLE_WARNING' : 'LIFECYCLE_WINBACK',
         body: this.renderTemplate(trigger.messageTemplate, {
@@ -172,7 +188,7 @@ export class LifecycleTriggersService {
       if (!policy.maturityDate || policy.maturityDate > cutoffStr || policy.maturityDate < new Date().toISOString().slice(0, 10)) continue;
       if (!policy.client?.smsConsent) continue;
       if (await this.alreadyFired(trigger.id, policy.id)) continue;
-      await this.notificationsService.queueSms({
+      await this.dispatchSms({
         toPhone: policy.client.phone, relatedType: 'trigger', relatedId: trigger.id,
         templateCode: 'LIFECYCLE_RENEWAL',
         body: this.renderTemplate(trigger.messageTemplate, {
@@ -196,7 +212,7 @@ export class LifecycleTriggersService {
       // Anniversary fires yearly, keyed by (trigger, policy, year) so it isn't a true one-time fire like welcome/warning.
       const yearKey = `${policy.id}-${today.getFullYear()}`;
       if (await this.alreadyFired(trigger.id, yearKey)) continue;
-      await this.notificationsService.queueSms({
+      await this.dispatchSms({
         toPhone: policy.client.phone, relatedType: 'trigger', relatedId: trigger.id,
         templateCode: 'LIFECYCLE_ANNIVERSARY',
         body: this.renderTemplate(trigger.messageTemplate, { clientName: policy.client.fullName, policyNo: policy.policyNo }),
@@ -215,7 +231,7 @@ export class LifecycleTriggersService {
       if (await this.alreadyFired(trigger.id, referred.id)) continue;
       const referrer = await this.clientsRepo.findOne({ where: { id: referred.referredByClientId } });
       if (!referrer?.smsConsent) continue;
-      await this.notificationsService.queueSms({
+      await this.dispatchSms({
         toPhone: referrer.phone, relatedType: 'trigger', relatedId: trigger.id,
         templateCode: 'LIFECYCLE_REFERRAL_REWARD',
         body: this.renderTemplate(trigger.messageTemplate, { referrerName: referrer.fullName, referredName: referred.fullName }),

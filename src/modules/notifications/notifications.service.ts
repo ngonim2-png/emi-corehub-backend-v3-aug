@@ -9,6 +9,7 @@ import { ClientEntity } from '../clients-policies/entities/client.entity';
 import { UserEntity } from '../identity-access/entities/user.entity';
 import { SendBulkSmsDto } from './dto/send-bulk-sms.dto';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+import { PoliciesService } from '../clients-policies/policies.service';
 
 export interface QueueSmsInput {
   toPhone: string;
@@ -30,6 +31,7 @@ export class NotificationsService {
     @InjectRepository(UserEntity) private readonly usersRepo: Repository<UserEntity>,
     @InjectQueue('sms') private readonly smsQueue: Queue,
     @InjectQueue('bulk-sms') private readonly bulkSmsQueue: Queue,
+    private readonly policiesService: PoliciesService,
   ) {}
 
   async queueSms(input: QueueSmsInput): Promise<SmsLogEntity> {
@@ -42,6 +44,45 @@ export class NotificationsService {
       { attempts: 3, backoff: { type: 'exponential', delay: 5000 } },
     );
     return log;
+  }
+
+  /**
+   * For automatically-triggered messages (payment receipts, claim status
+   * updates) while automatic sending is restricted - records exactly what
+   * would have gone out and why, but doesn't actually send it. Nothing is
+   * lost: it shows up in the Pending SMS queue for a person to review and
+   * send manually. See NotificationsEventListener for where this is used
+   * instead of queueSms().
+   */
+  async logPendingSms(input: QueueSmsInput): Promise<SmsLogEntity> {
+    return this.smsLogRepo.save(this.smsLogRepo.create({ ...input, status: 'Pending' }));
+  }
+
+  async listPending(): Promise<SmsLogEntity[]> {
+    return this.smsLogRepo.find({ where: { status: 'Pending' }, order: { createdAt: 'DESC' } });
+  }
+
+  /** Turns a Pending log entry into an actual send - the explicit human trigger. */
+  async sendPendingSms(id: string): Promise<SmsLogEntity> {
+    const log = await this.smsLogRepo.findOne({ where: { id } });
+    if (!log) throw new BadRequestException('SMS log entry not found.');
+    if (log.status !== 'Pending') throw new BadRequestException('This message is not pending - it may have already been sent.');
+    await this.smsLogRepo.update(id, { status: 'Queued' });
+    await this.smsQueue.add(
+      'send-sms',
+      { smsLogId: log.id, toPhone: log.toPhone, body: log.body },
+      { attempts: 3, backoff: { type: 'exponential', delay: 5000 } },
+    );
+    return this.smsLogRepo.findOneOrFail({ where: { id } });
+  }
+
+  /** Sends every currently-pending message - for clearing a backlog in one action rather than one at a time. */
+  async sendAllPending(): Promise<{ sent: number }> {
+    const pending = await this.listPending();
+    for (const log of pending) {
+      await this.sendPendingSms(log.id);
+    }
+    return { sent: pending.length };
   }
 
   templatePaymentReceipt(params: {
@@ -60,6 +101,44 @@ export class NotificationsService {
   }
 
   /** Resolves an audience selection into a deduplicated list of phone numbers. Never sends anything by itself - callers use this to preview a count or to build the recipient list before queuing. */
+  /**
+   * The actual member list for a policy-based audience segment - name,
+   * phone, and the one relevant detail for that segment, so the frontend
+   * can show a real reviewable list rather than just a blind count.
+   * Reuses the exact same computed status (PoliciesService.computedReport)
+   * and renewal-window logic the Register, Unpaid, Lapse, and Renewals
+   * screens already use, so "lapsed" or "pending premium" here always
+   * means the same thing it means everywhere else in the system.
+   */
+  async findSegmentMembers(
+    segment: 'all' | 'pendingPremium' | 'lapsed' | 'renewal',
+    renewalWithinDays = 60,
+  ): Promise<{ clientId: string; clientName: string; phone: string; policyNo: string; detail: string }[]> {
+    if (segment === 'renewal') {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() + renewalWithinDays);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      const policies = await this.policiesService.findAllWithClientAndProduct();
+      return policies
+        .filter((p) => p.maturityDate && p.maturityDate <= cutoffStr && p.client.smsConsent)
+        .map((p) => ({
+          clientId: p.client.id, clientName: p.client.fullName, phone: p.client.phone,
+          policyNo: p.policyNo, detail: `Matures ${p.maturityDate}`,
+        }));
+    }
+
+    const rows = await this.policiesService.computedReport();
+    const consented = rows.filter((r) => r.clientSmsConsent);
+    const matched = segment === 'all' ? consented
+      : segment === 'pendingPremium' ? consented.filter((r) => r.totalOutstanding > 0)
+      : consented.filter((r) => r.status === 'Lapsed');
+
+    return matched.map((r) => ({
+      clientId: r.clientId, clientName: r.clientName, phone: r.clientPhone, policyNo: r.policyNo,
+      detail: segment === 'pendingPremium' ? `Outstanding: NLe ${r.totalOutstanding.toFixed(2)}` : r.status,
+    }));
+  }
+
   async resolveAudience(dto: Pick<SendBulkSmsDto, 'audienceType' | 'filters' | 'customPhones'>): Promise<string[]> {
     let phones: string[] = [];
 

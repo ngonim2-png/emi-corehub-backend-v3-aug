@@ -23,6 +23,33 @@ export class NotificationsController {
     });
   }
 
+  /** Messages an automatic trigger would have sent, held for a human to review while automatic sending is restricted. */
+  @Get('sms-logs/pending')
+  async findPending() {
+    return this.notificationsService.listPending();
+  }
+
+  @Post('sms-logs/:id/send')
+  @Roles('Super Admin', 'Branch Manager')
+  @AuditLog({ action: 'sms.pending_sent', entityType: 'sms_log' })
+  async sendPending(@Param('id') id: string) {
+    return this.notificationsService.sendPendingSms(id);
+  }
+
+  @Post('sms-logs/send-all-pending')
+  @Roles('Super Admin', 'Branch Manager')
+  @AuditLog({ action: 'sms.pending_sent_all', entityType: 'sms_log' })
+  async sendAllPending() {
+    return this.notificationsService.sendAllPending();
+  }
+
+  /** The actual reviewable member list for a policy-based audience segment (all / pendingPremium / lapsed / renewal), for the frontend's select-before-sending UI. */
+  @Get('bulk-sms/segment-members')
+  @Roles('Super Admin', 'Branch Manager')
+  async segmentMembers(@Query('segment') segment: 'all' | 'pendingPremium' | 'lapsed' | 'renewal', @Query('renewalWithinDays') renewalWithinDays?: string) {
+    return this.notificationsService.findSegmentMembers(segment, renewalWithinDays ? parseInt(renewalWithinDays, 10) : undefined);
+  }
+
   /** Lets the UI show "this will reach N people" before anything is actually queued. */
   @Post('bulk-sms/preview-audience')
   @Roles('Super Admin', 'Branch Manager')

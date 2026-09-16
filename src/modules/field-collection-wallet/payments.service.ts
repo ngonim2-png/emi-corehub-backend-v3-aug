@@ -127,9 +127,24 @@ export class PaymentsService {
     const unmatchedPolicy: string[] = [];
     const failed: { row: number; reason: string }[] = [];
 
+    /**
+     * Real roster data has proven inconsistent on this exact point - the
+     * same policy number sometimes has an internal space ("MPE 001") and
+     * sometimes doesn't ("MPE001"), depending on how it was originally
+     * typed into the source spreadsheet. An exact-string match against
+     * policyNo silently fails for any of these, so matching here strips
+     * all whitespace and normalizes case on both sides - the file's
+     * policy number and the stored one - before comparing. This does not
+     * change what's actually stored in policyNo; it only makes matching
+     * during upload resilient to a difference that's purely cosmetic.
+     */
+    const normalize = (s: string) => s.replace(/\s+/g, '').toUpperCase();
+    const allPolicies = await this.policiesRepo.find({ select: ['id', 'policyNo'] });
+    const policyByNormalizedNo = new Map(allPolicies.map((p) => [normalize(p.policyNo), p]));
+
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const policy = await this.policiesRepo.findOne({ where: { policyNo: row.policyNo } });
+      const policy = policyByNormalizedNo.get(normalize(row.policyNo));
       if (!policy) {
         unmatchedPolicy.push(row.policyNo);
         continue;

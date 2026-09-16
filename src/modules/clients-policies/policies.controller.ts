@@ -42,12 +42,12 @@ export class PoliciesController {
    */
   @Get('reports/computed')
   async computed(@Query('reportingMonth') reportingMonth?: string) {
-    return this.computeRegisterRows(reportingMonth);
+    return this.policiesService.computedReport(reportingMonth);
   }
 
   @Get('reports/export')
   async exportRegister(@Query('reportingMonth') reportingMonth: string | undefined, @Res() res: Response) {
-    const rows = await this.computeRegisterRows(reportingMonth);
+    const rows = await this.policiesService.computedReport(reportingMonth);
     const buffer = await buildExcelExport(
       'Client & Policy Register',
       [
@@ -73,58 +73,6 @@ export class PoliciesController {
       `Client & Policy Register — ${reportingMonth ?? new Date().toISOString().slice(0, 7)}`,
     );
     sendExcelFile(res, buffer, `client-policy-register-${reportingMonth ?? 'current'}.xlsx`);
-  }
-
-  private async computeRegisterRows(reportingMonth?: string) {
-    const rules = {
-      premiumDueDay: this.config.get<number>('businessRules.premiumDueDay') ?? 5,
-      warningThresholdMonths: this.config.get<number>('businessRules.warningThresholdMonths') ?? 2,
-      lapseThresholdMonths: this.config.get<number>('businessRules.lapseThresholdMonths') ?? 3,
-    };
-    const month = reportingMonth ?? new Date().toISOString().slice(0, 7);
-
-    const policies = await this.policiesService.findAllWithClientAndProduct();
-    const paymentsByPolicy = await this.paymentsService.getPaymentsByMonthForPolicies(policies.map((p) => p.id));
-    const results = [];
-    for (const policy of policies) {
-      const paymentsByMonthMajor = paymentsByPolicy.get(policy.id) ?? {};
-      const paymentsByMonth: Record<string, number> = {};
-      for (const [m, major] of Object.entries(paymentsByMonthMajor)) {
-        paymentsByMonth[m] = Money.fromMajor(major).toMinor();
-      }
-      const computed = computePolicyStatus(
-        {
-          commencementMonth: policy.commencementDate.slice(0, 7),
-          maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
-          monthlyPremiumMinor: Money.fromMajor(policy.monthlyPremium).toMinor(),
-          paymentsByMonth,
-        },
-        month,
-        rules,
-      );
-      results.push({
-        policyId: policy.id,
-        policyNo: policy.policyNo,
-        clientId: policy.client.id,
-        clientName: policy.client.fullName,
-        clientPhone: policy.client.phone,
-        productName: policy.product?.name,
-        monthlyPremium: Number(policy.monthlyPremium),
-        sumAssured: Number(policy.sumAssured),
-        commencementMonth: policy.commencementDate.slice(0, 7),
-        maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
-        status: policy.status === 'Cancelled' ? 'Cancelled' : computed.status,
-        totalExpected: Money.fromMinor(computed.totalExpectedMinor).toMajor(),
-        totalPaid: Money.fromMinor(computed.totalPaidMinor).toMajor(),
-        totalOutstanding: Money.fromMinor(computed.totalOutstandingMinor).toMajor(),
-        currentExpected: Money.fromMinor(computed.currentExpectedMinor).toMajor(),
-        currentPaid: Money.fromMinor(computed.currentPaidMinor).toMajor(),
-        currentOutstanding: Money.fromMinor(computed.currentOutstandingMinor).toMajor(),
-        consecutiveUnpaidMonths: computed.consecutiveUnpaidMonths,
-        lastPaidMonth: computed.lastPaidMonth,
-      });
-    }
-    return results;
   }
 
   @Get(':id')

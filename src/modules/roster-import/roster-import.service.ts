@@ -152,7 +152,7 @@ export class RosterImportService {
       rows.push({
         rowIndex: r,
         statusRaw: statusRaw ? String(statusRaw).trim() : null,
-        policyNo: policyNoCell ? String(policyNoCell).trim() : null,
+        policyNo: policyNoCell ? String(policyNoCell).trim().replace(/\s+/g, '') : null,
         name: String(nameCell).trim(),
         pincode: pincodeCell ? String(pincodeCell).trim() : null,
         premium: typeof premiumCell === 'number' ? premiumCell : null,
@@ -212,7 +212,7 @@ export class RosterImportService {
         rows.push({
           rowIndex: r,
           statusRaw: null, // no status/cancellation column exists in this roster
-          policyNo: policyNoCell ? String(policyNoCell).trim() : null,
+          policyNo: policyNoCell ? String(policyNoCell).trim().replace(/\s+/g, '') : null,
           name: String(nameCell).trim(),
           pincode: pincodeCell ? String(pincodeCell).trim() : null,
           premium: typeof premiumCell === 'number' ? premiumCell : null,
@@ -306,7 +306,7 @@ export class RosterImportService {
       }
       if (!currentClientName) continue; // no client established yet - nothing to attach this row to
 
-      const rawPolicyNo = policyNoCell ? String(policyNoCell).trim() : null;
+      const rawPolicyNo = policyNoCell ? String(policyNoCell).trim().replace(/\s+/g, '') : null;
       let effectivePolicyNo = rawPolicyNo;
       if (rawPolicyNo) {
         const occurrence = (policyNoOccurrences.get(rawPolicyNo) ?? 0) + 1;
@@ -394,7 +394,7 @@ export class RosterImportService {
       rows.push({
         rowIndex: r,
         statusRaw: null,
-        policyNo: policyNoCell ? String(policyNoCell).trim() : null,
+        policyNo: policyNoCell ? String(policyNoCell).trim().replace(/\s+/g, '') : null,
         name: String(nameCell).trim(),
         pincode: null,
         premium: typeof premiumCell === 'number' ? premiumCell : null,
@@ -434,7 +434,18 @@ export class RosterImportService {
       if (r.pincode) pincodeCounts.set(r.pincode, (pincodeCounts.get(r.pincode) ?? 0) + 1);
     });
 
-    const existingPolicyNos = new Set((await this.policiesRepo.find({ select: ['policyNo'] })).map((p) => p.policyNo));
+    /**
+     * Existing stored policy numbers may still carry the pre-fix internal
+     * whitespace inconsistency (see the policyNo parsing above), so this
+     * comparison normalizes both sides the same way - otherwise
+     * re-uploading a roster whose policies were already imported with,
+     * say, "MPE 001" would fail to recognize a freshly-normalized
+     * "MPE001" as the same policy and create a duplicate.
+     */
+    const normalizePolicyNo = (s: string) => s.replace(/\s+/g, '').toUpperCase();
+    const existingPolicyNos = new Set(
+      (await this.policiesRepo.find({ select: ['policyNo'] })).map((p) => normalizePolicyNo(p.policyNo)),
+    );
     const existingPinCodes = new Set(
       (await this.policiesRepo.find({ select: ['payrollPinCode'] })).map((p) => p.payrollPinCode).filter((x): x is string => !!x),
     );
@@ -460,7 +471,7 @@ export class RosterImportService {
     const groupKeyToClient = new Map<string, ClientEntity>();
 
     for (const row of rows) {
-      if (row.policyNo && existingPolicyNos.has(row.policyNo)) {
+      if (row.policyNo && existingPolicyNos.has(normalizePolicyNo(row.policyNo))) {
         skippedAlreadyImported++;
         continue;
       }

@@ -212,6 +212,11 @@ export class CashFlowController {
     return this.financialReportsService.financialStatement(from, to);
   }
 
+  @Get('financial-statement/account-detail')
+  async accountDetail(@Query('code') code: string, @Query('from') from?: string, @Query('to') to?: string) {
+    return this.financialReportsService.accountDetail(code, from, to);
+  }
+
   @Get('financial-statement/export')
   @Roles('Super Admin', 'Finance Manager')
   async exportFinancialStatement(@Query('from') from: string, @Query('to') to: string, @Res() res: Response) {

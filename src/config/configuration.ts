@@ -32,9 +32,15 @@ export default () => ({
     lapseThresholdMonths: parseInt(process.env.LAPSE_THRESHOLD_MONTHS ?? '3', 10),
   },
   sms: {
-    provider: process.env.SMS_PROVIDER ?? 'orange',
+    provider: process.env.SMS_PROVIDER ?? 'alemobet',
     apiKey: process.env.SMS_API_KEY ?? '',
     senderId: process.env.SMS_SENDER_ID ?? 'EMI',
+    /** Event-driven SMS (payment receipts, claim status updates) is gated behind this - off by default, deliberately, so nothing sends automatically until this is explicitly turned on. Manual/triggered sending (single messages, bulk campaigns) is never affected by this flag. */
+    automaticEnabled: (process.env.SMS_AUTOMATIC_ENABLED ?? 'false').toLowerCase() === 'true',
+    alemobetServer: process.env.ALEMOBET_SERVER ?? '',
+    alemobetPort: Number(process.env.ALEMOBET_PORT ?? '8080'),
+    alemobetUsername: process.env.ALEMOBET_USERNAME ?? '',
+    alemobetPassword: process.env.ALEMOBET_PASSWORD ?? '',
   },
   email: {
     apiKey: process.env.EMAIL_API_KEY ?? '',

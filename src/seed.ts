@@ -27,6 +27,8 @@ const ROLES = [
   'Marketer / Agent',
   'HR Manager',
   'Internal Auditor',
+  'Life Manager',
+  'Finance Director',
 ];
 
 const PRODUCTS = [
@@ -70,6 +72,8 @@ const DEMO_USERS = [
   { fullName: 'Finance Manager', email: 'finance@emi.sl', role: 'Finance Manager' },
   { fullName: 'Abu Kamara', email: 'abu.kamara@emi.sl', role: 'Marketer / Agent' },
   { fullName: 'Mariama Conteh', email: 'mariama.conteh@emi.sl', role: 'Marketer / Agent' },
+  { fullName: 'Life Manager', email: 'lifemanager@emi.sl', role: 'Life Manager' },
+  { fullName: 'Finance Director', email: 'financedirector@emi.sl', role: 'Finance Director' },
 ];
 
 const DEMO_PASSWORD = 'password123';

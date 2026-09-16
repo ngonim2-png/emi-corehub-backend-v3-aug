@@ -2,6 +2,7 @@ import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nest
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Not } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { ConfigService } from '@nestjs/config';
 import { PolicyEntity, PolicyStatus } from './entities/policy.entity';
 import { ClientEntity } from './entities/client.entity';
 import { ProductEntity } from './entities/product.entity';
@@ -11,6 +12,8 @@ import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { computePolicyStatus } from './policy-status.util';
 import { FILE_STORAGE, FileStorageAdapter } from '../documents/adapters/file-storage.adapter';
+import { PaymentsService } from '../field-collection-wallet/payments.service';
+import { Money } from '../../common/utils/money.util';
 
 @Injectable()
 export class PoliciesService {
@@ -22,6 +25,8 @@ export class PoliciesService {
     private readonly auditService: AuditService,
     private readonly eventEmitter: EventEmitter2,
     @Inject(FILE_STORAGE) private readonly storage: FileStorageAdapter,
+    private readonly paymentsService: PaymentsService,
+    private readonly config: ConfigService,
   ) {}
 
   async create(dto: CreatePolicyDto): Promise<PolicyEntity> {
@@ -54,6 +59,68 @@ export class PoliciesService {
     const policy = await this.policiesRepo.findOne({ where: { id } });
     if (!policy) throw new NotFoundException('Policy not found');
     return policy;
+  }
+
+  /**
+   * The canonical per-policy status/arrears computation - originally
+   * lived only inside the register controller as a private method, moved
+   * here so it has exactly one implementation that Register, Unpaid,
+   * Lapse, and now the bulk SMS audience segments (see
+   * NotificationsService.resolveAudience) all call, rather than each
+   * re-deriving policy status their own way and risking drift between
+   * them over time.
+   */
+  async computedReport(reportingMonth?: string) {
+    const rules = {
+      premiumDueDay: this.config.get<number>('businessRules.premiumDueDay') ?? 5,
+      warningThresholdMonths: this.config.get<number>('businessRules.warningThresholdMonths') ?? 2,
+      lapseThresholdMonths: this.config.get<number>('businessRules.lapseThresholdMonths') ?? 3,
+    };
+    const month = reportingMonth ?? new Date().toISOString().slice(0, 7);
+
+    const policies = await this.findAllWithClientAndProduct();
+    const paymentsByPolicy = await this.paymentsService.getPaymentsByMonthForPolicies(policies.map((p) => p.id));
+    const results = [];
+    for (const policy of policies) {
+      const paymentsByMonthMajor = paymentsByPolicy.get(policy.id) ?? {};
+      const paymentsByMonth: Record<string, number> = {};
+      for (const [m, major] of Object.entries(paymentsByMonthMajor)) {
+        paymentsByMonth[m] = Money.fromMajor(major).toMinor();
+      }
+      const computed = computePolicyStatus(
+        {
+          commencementMonth: policy.commencementDate.slice(0, 7),
+          maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
+          monthlyPremiumMinor: Money.fromMajor(policy.monthlyPremium).toMinor(),
+          paymentsByMonth,
+        },
+        month,
+        rules,
+      );
+      results.push({
+        policyId: policy.id,
+        policyNo: policy.policyNo,
+        clientId: policy.client.id,
+        clientName: policy.client.fullName,
+        clientPhone: policy.client.phone,
+        clientSmsConsent: policy.client.smsConsent,
+        productName: policy.product?.name,
+        monthlyPremium: Number(policy.monthlyPremium),
+        sumAssured: Number(policy.sumAssured),
+        commencementMonth: policy.commencementDate.slice(0, 7),
+        maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
+        status: policy.status === 'Cancelled' ? 'Cancelled' : computed.status,
+        totalExpected: Money.fromMinor(computed.totalExpectedMinor).toMajor(),
+        totalPaid: Money.fromMinor(computed.totalPaidMinor).toMajor(),
+        totalOutstanding: Money.fromMinor(computed.totalOutstandingMinor).toMajor(),
+        currentExpected: Money.fromMinor(computed.currentExpectedMinor).toMajor(),
+        currentPaid: Money.fromMinor(computed.currentPaidMinor).toMajor(),
+        currentOutstanding: Money.fromMinor(computed.currentOutstandingMinor).toMajor(),
+        consecutiveUnpaidMonths: computed.consecutiveUnpaidMonths,
+        lastPaidMonth: computed.lastPaidMonth,
+      });
+    }
+    return results;
   }
 
   /** A photo/scan of the physical, signed application form - same pattern as ClientsService.uploadPhoto. */
