@@ -15,6 +15,34 @@ interface ParsedDeductionRow {
   amount: number;
 }
 
+const FULL_MONTH_NAMES: Record<string, number> = {
+  january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+  july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+};
+
+/**
+ * The real file states its own period directly in a header cell - "AUGUST,
+ * 2026" confirmed verbatim in a real export - so the month doesn't need
+ * to be typed in separately every upload. Scans only the first several
+ * rows (where this always appears in the real file) rather than the
+ * whole sheet, both for speed and to avoid an unrelated cell elsewhere
+ * coincidentally matching the pattern.
+ */
+function extractPeriodFromMdaFile(rows: any[][]): string | null {
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const row = rows[i];
+    if (!row) continue;
+    for (const cell of row) {
+      if (!cell) continue;
+      const m = String(cell).trim().match(/^([A-Za-z]+),?\s*(\d{4})$/);
+      if (!m) continue;
+      const monthNum = FULL_MONTH_NAMES[m[1].toLowerCase()];
+      if (monthNum) return `${m[2]}-${String(monthNum).padStart(2, '0')}`;
+    }
+  }
+  return null;
+}
+
 /**
  * Column positions are detected dynamically from the "PIN CODE" header
  * row rather than assumed fixed - confirmed necessary against real
@@ -30,7 +58,7 @@ interface ParsedDeductionRow {
  * name - also verified directly against real files rather than
  * assumed.
  */
-function parseDeductionFile(buffer: Buffer): ParsedDeductionRow[] {
+function parseDeductionFile(buffer: Buffer): { rows: ParsedDeductionRow[]; detectedPeriod: string | null } {
   const wb = XLSX.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   if (!ws) throw new BadRequestException('That file has no worksheet to read.');
@@ -58,7 +86,7 @@ function parseDeductionFile(buffer: Buffer): ParsedDeductionRow[] {
       break;
     }
   }
-  if (!cols) return records; // no recognizable header found anywhere - nothing reliable to parse
+  if (!cols) return { rows: records, detectedPeriod: extractPeriodFromMdaFile(rows) }; // no recognizable header found anywhere - nothing reliable to parse
 
   for (const row of rows) {
     if (!row || row.length === 0) continue;
@@ -93,7 +121,78 @@ function parseDeductionFile(buffer: Buffer): ParsedDeductionRow[] {
       });
     }
   }
-  return records;
+  return { rows: records, detectedPeriod: extractPeriodFromMdaFile(rows) };
+}
+
+const MONTH_ABBREVIATIONS: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, apl: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
+};
+
+/** Parses a sheet name like "APR-2026", "DEC2025", or "APL-2025" (a real typo for April seen in the actual file) into a YYYY-MM period, or null if the sheet name doesn't look like a month at all - used to skip non-data sheets like a cover/summary tab. */
+function parsePeriodFromSheetName(sheetName: string): string | null {
+  const m = sheetName.trim().match(/^([A-Za-z]{3,4})-?(\d{4})$/);
+  if (!m) return null;
+  const monthNum = MONTH_ABBREVIATIONS[m[1].toLowerCase()];
+  if (!monthNum) return null;
+  return `${m[2]}-${String(monthNum).padStart(2, '0')}`;
+}
+
+/**
+ * EMI's own deduction database as received from the Accountant General -
+ * genuinely different from the format parseDeductionFile() above handles.
+ * That one is the AG's raw, unfiltered payroll export with MDA blocks
+ * covering every department; this one is already filtered to EMI's own
+ * clients specifically, one sheet per month, with simple columns: a
+ * "POLICY NO." column that is the AG's own reference code (confirmed
+ * against a real file - it does not match EMI's actual policy numbers,
+ * e.g. "PSS00258" in this file vs "SSC001" for the same real client in
+ * EMI's own system), plus CLIENTS NAMES, PINCODE, and PREMIUM. Matching
+ * therefore has to go by pincode, exactly like the MDA-format import
+ * already does - the AG's policy number here is not usable for matching
+ * and is kept only for audit/reference on the resulting record.
+ */
+function parseEmiEndowmentDeductionFile(buffer: Buffer): Map<string, ParsedDeductionRow[]> {
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const byPeriod = new Map<string, ParsedDeductionRow[]>();
+
+  for (const sheetName of wb.SheetNames) {
+    const period = parsePeriodFromSheetName(sheetName);
+    if (!period) continue; // not a recognizable month sheet - e.g. a cover/summary tab - skip quietly
+
+    const ws = wb.Sheets[sheetName];
+    const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true });
+    if (rows.length === 0) continue;
+
+    const headerRow = rows[0] || [];
+    const col: Record<string, number> = {};
+    headerRow.forEach((h, idx) => { if (h) col[String(h).trim().toUpperCase()] = idx; });
+    const cPolicy = col['POLICY NO.'] ?? col['POLICY NO'];
+    const cName = col['CLIENTS NAMES'] ?? col['CLIENT NAMES'] ?? col['NAME'];
+    const cPincode = col['PINCODE'] ?? col['PIN-CODE'] ?? col['PIN CODE'];
+    const cPremium = col['PREMIUM'] ?? col['PREMIUN'];
+    if (cPincode === undefined || cName === undefined || cPremium === undefined) continue; // not a real data sheet - skip quietly
+
+    const parsedRows: ParsedDeductionRow[] = [];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row) continue;
+      const pincodeCell = row[cPincode];
+      const nameCell = row[cName];
+      if (!pincodeCell || !nameCell) continue;
+      const amountCell = row[cPremium];
+      const amount = typeof amountCell === 'number' ? amountCell : parseFloat(amountCell);
+      parsedRows.push({
+        mdaCode: cPolicy !== undefined && row[cPolicy] ? String(row[cPolicy]).trim() : null,
+        mdaName: null,
+        pincode: String(pincodeCell).trim(),
+        employeeName: String(nameCell).trim(),
+        amount: isNaN(amount) ? 0 : amount,
+      });
+    }
+    if (parsedRows.length > 0) byPeriod.set(period, parsedRows);
+  }
+  return byPeriod;
 }
 
 @Injectable()
@@ -104,20 +203,12 @@ export class DeductionImportService {
     private readonly paymentsService: PaymentsService,
   ) {}
 
-  async importDeductions(
-    buffer: Buffer,
+  private async processRows(
+    rows: ParsedDeductionRow[],
     period: string,
     fileName: string,
     actor: AuthenticatedUser,
   ): Promise<{ posted: number; alreadyPosted: number; unmatched: number; zero: number; policyCancelled: number }> {
-    if (!/^\d{4}-\d{2}$/.test(period)) {
-      throw new BadRequestException('period must be in YYYY-MM format.');
-    }
-    const rows = parseDeductionFile(buffer);
-    if (rows.length === 0) {
-      throw new BadRequestException('No deduction rows for Enhanced Mutual Insurance were found in that file - check it is the right export.');
-    }
-
     const counts = { posted: 0, alreadyPosted: 0, unmatched: 0, zero: 0, policyCancelled: 0 };
 
     for (const row of rows) {
@@ -162,6 +253,50 @@ export class DeductionImportService {
     }
 
     return counts;
+  }
+
+  async importDeductions(
+    buffer: Buffer,
+    period: string | undefined,
+    fileName: string,
+    actor: AuthenticatedUser,
+  ): Promise<{ posted: number; alreadyPosted: number; unmatched: number; zero: number; policyCancelled: number; periodUsed: string }> {
+    const { rows, detectedPeriod } = parseDeductionFile(buffer);
+    if (rows.length === 0) {
+      throw new BadRequestException('No deduction rows for Enhanced Mutual Insurance were found in that file - check it is the right export.');
+    }
+    // An explicit period always wins (a manual override for the rare
+    // case auto-detection is wrong or a file lacks its own header text),
+    // otherwise the file's own stated period - "AUGUST, 2026" confirmed
+    // verbatim in a real file - is used automatically.
+    const periodToUse = period || detectedPeriod;
+    if (!periodToUse || !/^\d{4}-\d{2}$/.test(periodToUse)) {
+      throw new BadRequestException('Could not determine which month this file is for - the file did not state it in a recognizable way, and none was given explicitly.');
+    }
+    const counts = await this.processRows(rows, periodToUse, fileName, actor);
+    return { ...counts, periodUsed: periodToUse };
+  }
+
+  /**
+   * The raw file as received from the AG's office, covering multiple
+   * months in one file (one sheet per month) - every recognizable month
+   * sheet is processed in this single upload, each against its own
+   * period, rather than requiring a separate upload per month.
+   */
+  async importEmiEndowmentFile(
+    buffer: Buffer,
+    fileName: string,
+    actor: AuthenticatedUser,
+  ): Promise<{ perMonth: Record<string, { posted: number; alreadyPosted: number; unmatched: number; zero: number; policyCancelled: number }>; monthsProcessed: number }> {
+    const byPeriod = parseEmiEndowmentDeductionFile(buffer);
+    if (byPeriod.size === 0) {
+      throw new BadRequestException('No recognizable month sheets were found in that file - check it is a real Accountant General endowment deduction export.');
+    }
+    const perMonth: Record<string, { posted: number; alreadyPosted: number; unmatched: number; zero: number; policyCancelled: number }> = {};
+    for (const [period, rows] of byPeriod) {
+      perMonth[period] = await this.processRows(rows, period, fileName, actor);
+    }
+    return { perMonth, monthsProcessed: byPeriod.size };
   }
 
   async listRecords(filters: { period?: string; status?: DeductionRecordStatus; mdaName?: string; search?: string }): Promise<DeductionImportRecordEntity[]> {

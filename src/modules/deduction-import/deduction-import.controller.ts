@@ -18,12 +18,25 @@ export class DeductionImportController {
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_DEDUCTION_BYTES } }))
   async upload(
     @UploadedFile() file: Express.Multer.File,
-    @Body('period') period: string,
+    @Body('period') period: string | undefined,
     @CurrentUser() actor: AuthenticatedUser,
   ) {
     if (!file) throw new BadRequestException('No file was uploaded.');
-    if (!period) throw new BadRequestException('Choose which month this deduction file is for.');
-    return this.deductionImportService.importDeductions(file.buffer, period, file.originalname, actor);
+    return this.deductionImportService.importDeductions(file.buffer, period || undefined, file.originalname, actor);
+  }
+
+  /**
+   * The raw endowment deduction database exactly as received from the
+   * Accountant General's office - no period needed here, since the real
+   * file already covers multiple months as separate sheets and each
+   * month's period is derived from its own sheet name.
+   */
+  @Post('upload-emi-endowment')
+  @AuditLog({ action: 'deduction_import.emi_endowment_uploaded', entityType: 'deduction_import' })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_DEDUCTION_BYTES } }))
+  async uploadEmiEndowment(@UploadedFile() file: Express.Multer.File, @CurrentUser() actor: AuthenticatedUser) {
+    if (!file) throw new BadRequestException('No file was uploaded.');
+    return this.deductionImportService.importEmiEndowmentFile(file.buffer, file.originalname, actor);
   }
 
   @Get('records')

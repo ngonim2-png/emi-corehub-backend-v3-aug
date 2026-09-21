@@ -442,7 +442,11 @@ export class RosterImportService {
      * say, "MPE 001" would fail to recognize a freshly-normalized
      * "MPE001" as the same policy and create a duplicate.
      */
-    const normalizePolicyNo = (s: string) => s.replace(/\s+/g, '').toUpperCase();
+    const normalizePolicyNo = (s: string) => {
+      const cleaned = s.replace(/\s+/g, '').toUpperCase();
+      const m = cleaned.match(/^([A-Z]*)0*(\d+)$/);
+      return m ? `${m[1]}${m[2]}` : cleaned;
+    };
     const existingPolicyNos = new Set(
       (await this.policiesRepo.find({ select: ['policyNo'] })).map((p) => normalizePolicyNo(p.policyNo)),
     );

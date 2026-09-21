@@ -138,7 +138,21 @@ export class PaymentsService {
      * change what's actually stored in policyNo; it only makes matching
      * during upload resilient to a difference that's purely cosmetic.
      */
-    const normalize = (s: string) => s.replace(/\s+/g, '').toUpperCase();
+    /**
+     * Strips whitespace and normalizes case, as before - and now also
+     * strips leading zeros from a trailing numeric sequence (so
+     * "SSP037" and "SSP37" are treated as the same policy). Confirmed
+     * necessary against a real file: a real payment for policy SSP037
+     * was entered in the payment file as "SSP37", missing the leading
+     * zero the roster import had stored it with, and would otherwise
+     * have silently failed to match despite being the exact same
+     * policy.
+     */
+    const normalize = (s: string) => {
+      const cleaned = s.replace(/\s+/g, '').toUpperCase();
+      const m = cleaned.match(/^([A-Z]*)0*(\d+)$/);
+      return m ? `${m[1]}${m[2]}` : cleaned;
+    };
     const allPolicies = await this.policiesRepo.find({ select: ['id', 'policyNo'] });
     const policyByNormalizedNo = new Map(allPolicies.map((p) => [normalize(p.policyNo), p]));
 
