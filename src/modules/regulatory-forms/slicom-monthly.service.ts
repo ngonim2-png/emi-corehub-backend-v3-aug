@@ -28,6 +28,8 @@ const MONTH_NAMES = [
   'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
 ];
 
+const MAX_REPORT_ROWS = 10000;
+
 @Injectable()
 export class SlicomMonthlyService {
   constructor(
@@ -54,6 +56,13 @@ export class SlicomMonthlyService {
   }
 
   private ensureRowCapacity(ws: ExcelJS.Worksheet, layout: SheetLayout, neededRows: number): number {
+    if (neededRows > MAX_REPORT_ROWS) {
+      throw new BadRequestException(
+        `This report would need ${neededRows} rows on "${layout.sheetName}", which is far beyond what a real month's data should produce - ` +
+          'this points to something else being wrong (an incorrect period, a duplicate-data issue) rather than a genuinely large month. ' +
+          'Please check the data for this period before retrying.',
+      );
+    }
     const available = layout.lastTemplateDataRow - layout.firstDataRow + 1;
     if (neededRows <= available) return layout.footerRow;
     const extra = neededRows - available;
@@ -120,8 +129,7 @@ export class SlicomMonthlyService {
       .createQueryBuilder('payment')
       .innerJoinAndSelect('payment.policy', 'policy')
       .innerJoinAndSelect('policy.client', 'client')
-      .where('payment.createdAt >= :start', { start: periodStart })
-      .andWhere('payment.createdAt < :end', { end: `${periodEnd} 23:59:59` })
+      .where('payment.paymentMonth = :period', { period })
       .andWhere('payment.reversalStatus != :reversed', { reversed: 'Reversed' })
       .andWhere('payment.amount > 0')
       .orderBy('payment.createdAt', 'ASC')
