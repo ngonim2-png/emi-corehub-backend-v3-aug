@@ -48,7 +48,7 @@ export class ClientsController {
   }
 
   @Post(':id/edit')
-  @Roles('Supreme Admin')
+  @Roles('Supreme Admin', 'Super Admin', 'Underwriting Officer')
   @AuditLog({ action: 'client.edited', entityType: 'client' })
   async edit(@Param('id') id: string, @Body() fields: Record<string, unknown>) {
     return this.clientsService.editFields(id, fields);
