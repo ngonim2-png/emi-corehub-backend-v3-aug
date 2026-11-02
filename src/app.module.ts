@@ -36,7 +36,7 @@ import { PayrollUploadModule } from './modules/payroll-upload/payroll-upload.mod
 import { CalendarModule } from './modules/calendar/calendar.module';
 import { LeadershipModule } from './modules/leadership/leadership.module';
 import { LoansModule } from './modules/loans/loans.module';
-import { ClientPortalModule } from './modules/client-portal/client-portal.module';
+import { ClientAppModule } from './modules/client-app/client-app.module';
 import { PolicyDocumentsModule } from './modules/policy-documents/policy-documents.module';
 import { RosterImportModule } from './modules/roster-import/roster-import.module';
 import { DeductionImportModule } from './modules/deduction-import/deduction-import.module';
@@ -140,7 +140,7 @@ import { JobsModule } from './jobs/jobs.module';
     CalendarModule,
     LeadershipModule,
     LoansModule,
-    ClientPortalModule,
+    ClientAppModule,
     PolicyDocumentsModule,
     RosterImportModule,
     DeductionImportModule,

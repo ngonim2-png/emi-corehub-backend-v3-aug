@@ -16,6 +16,8 @@ export enum DomainEvents {
   ClaimRegistered = 'claim.registered',
   ClaimApproved = 'claim.approved',
   ClaimPaid = 'claim.paid',
+  ClaimStatusChanged = 'claim.status_changed',
+  LoanStatusChanged = 'loan.status_changed',
   ComplaintLogged = 'complaint.logged',
   JournalPosted = 'journal.posted',
   PeriodClosed = 'period.closed',
@@ -50,4 +52,18 @@ export interface ClaimStatusEvent {
   policyNumber: string;
   amountMajor: number;
   status: string;
+}
+
+export interface ClaimStatusChangedEvent {
+  claimId: string;
+  claimNo: string;
+  clientId: string;
+  status: string;
+}
+
+export interface LoanStatusChangedEvent {
+  loanId: string;
+  clientId: string;
+  status: string;
+  amountMajor: number;
 }

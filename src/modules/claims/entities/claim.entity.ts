@@ -52,6 +52,17 @@ export class ClaimEntity {
   @Column({ type: 'uuid', nullable: true })
   decidedBy: string | null;
 
+  /** 'Staff' = registered by the office, 'Client App' = filed by the client themselves in the mobile app. */
+  @Column({ default: 'Staff' })
+  source: string;
+
+  /** What happened, in the client's own words (client-app claims). */
+  @Column({ type: 'text', nullable: true })
+  description: string | null;
+
+  @Column({ type: 'date', nullable: true })
+  incidentDate: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

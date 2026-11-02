@@ -1,0 +1,17 @@
+{
+  "name": "Enhanced Mutual Insurance",
+  "short_name": "EMI",
+  "description": "Your policy, claims and loans with Enhanced Mutual Insurance (SL) Ltd",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B0827",
+  "theme_color": "#0B0827",
+  "lang": "en",
+  "icons": [
+    { "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "img/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "img/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

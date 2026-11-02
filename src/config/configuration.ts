@@ -49,4 +49,12 @@ export default () => ({
   leadWebhookSecret: process.env.LEAD_WEBHOOK_SECRET ?? '',
   uploadDir: process.env.UPLOAD_DIR,
   portalJwtSecret: process.env.PORTAL_JWT_SECRET,
+  clientApp: {
+    officePhone: process.env.APP_OFFICE_PHONE ?? '',
+    officeWhatsapp: process.env.APP_OFFICE_WHATSAPP ?? '',
+    officeAddress: process.env.APP_OFFICE_ADDRESS ?? '',
+    vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? '',
+    vapidPrivateKey: process.env.VAPID_PRIVATE_KEY ?? '',
+    vapidSubject: process.env.VAPID_SUBJECT ?? 'mailto:admin@enhancedmutual.sl',
+  },
 });

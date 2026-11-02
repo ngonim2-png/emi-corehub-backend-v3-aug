@@ -6,7 +6,7 @@ import { v4 as uuid } from 'uuid';
 import { ClaimEntity, ClaimStatus } from './entities/claim.entity';
 import { PolicyEntity } from '../clients-policies/entities/policy.entity';
 import { CreateClaimDto } from './dto/create-claim.dto';
-import { DomainEvents, ClaimStatusEvent } from '../../common/events/domain-events';
+import { DomainEvents, ClaimStatusEvent, ClaimStatusChangedEvent } from '../../common/events/domain-events';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 const FLOW: ClaimStatus[] = ['Registered', 'Under Review', 'Approved', 'Paid'];
@@ -19,7 +19,10 @@ export class ClaimsService {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
-  async create(dto: CreateClaimDto): Promise<ClaimEntity> {
+  async create(
+    dto: CreateClaimDto,
+    extra?: { source?: string; description?: string | null; incidentDate?: string | null },
+  ): Promise<ClaimEntity> {
     const policy = await this.policiesRepo.findOneOrFail({ where: { id: dto.policyId } });
     const claim = this.claimsRepo.create({
       claimNo: `CLM-${uuid().slice(0, 8).toUpperCase()}`,
@@ -28,6 +31,9 @@ export class ClaimsService {
       amountClaimed: dto.amountClaimed.toFixed(2),
       dateReported: dto.dateReported,
       status: 'Registered',
+      source: extra?.source ?? 'Staff',
+      description: extra?.description ?? null,
+      incidentDate: extra?.incidentDate ?? null,
     });
     const saved = await this.claimsRepo.save(claim);
     this.eventEmitter.emit(DomainEvents.ClaimRegistered, { claimId: saved.id });
@@ -64,6 +70,9 @@ export class ClaimsService {
       update.paymentMethod = payoutDetails?.paymentMethod || null;
     }
     await this.claimsRepo.update(id, update);
+    this.eventEmitter.emit(DomainEvents.ClaimStatusChanged, {
+      claimId: id, claimNo: claim.claimNo, clientId: claim.policy.client.id, status: nextStatus,
+    } as ClaimStatusChangedEvent);
 
     const event: ClaimStatusEvent = {
       claimId: id,
@@ -82,7 +91,11 @@ export class ClaimsService {
 
   async reject(id: string, actor: AuthenticatedUser): Promise<ClaimEntity> {
     await this.claimsRepo.update(id, { status: 'Rejected', decidedBy: actor.id });
-    return this.findOne(id);
+    const claim = await this.findOne(id);
+    this.eventEmitter.emit(DomainEvents.ClaimStatusChanged, {
+      claimId: id, claimNo: claim.claimNo, clientId: claim.policy.client.id, status: 'Rejected',
+    } as ClaimStatusChangedEvent);
+    return claim;
   }
 
   /** Reserve = the amount set aside on the books for an unresolved claim's likely payout. */

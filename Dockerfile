@@ -24,6 +24,7 @@ RUN groupadd --system emi && useradd --system --gid emi emi
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/public ./public
 COPY package.json ./
 
 USER emi

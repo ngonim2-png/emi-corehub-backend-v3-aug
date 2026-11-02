@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as ExcelJS from 'exceljs';
@@ -8,6 +8,13 @@ import { ClientEntity } from '../clients-policies/entities/client.entity';
 import { ProductEntity } from '../clients-policies/entities/product.entity';
 import { ClientsService } from '../clients-policies/clients.service';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
+
+/** "SSP 037", "ssp37" and "SSP037" are the same policy number. */
+export function normalizePolicyNo(s: string): string {
+  const cleaned = String(s ?? '').replace(/\s+/g, '').toUpperCase();
+  const m = cleaned.match(/^([A-Z]*)0*(\d+)$/);
+  return m ? `${m[1]}${m[2]}` : cleaned;
+}
 
 const DESIGNATION_FIXES: Record<string, string> = { P0LICE: 'POLICE', PRIONS: 'PRISONS' };
 
@@ -442,11 +449,6 @@ export class RosterImportService {
      * say, "MPE 001" would fail to recognize a freshly-normalized
      * "MPE001" as the same policy and create a duplicate.
      */
-    const normalizePolicyNo = (s: string) => {
-      const cleaned = s.replace(/\s+/g, '').toUpperCase();
-      const m = cleaned.match(/^([A-Z]*)0*(\d+)$/);
-      return m ? `${m[1]}${m[2]}` : cleaned;
-    };
     const existingPolicyNos = new Set(
       (await this.policiesRepo.find({ select: ['policyNo'] })).map((p) => normalizePolicyNo(p.policyNo)),
     );
@@ -579,8 +581,15 @@ export class RosterImportService {
     if (!issue) throw new NotFoundException('Import issue not found');
     if (issue.status !== 'Pending') throw new BadRequestException('This issue has already been resolved or dismissed.');
 
-    const existing = await this.policiesRepo.findOne({ where: { policyNo: fields.policyNo } });
-    if (existing) throw new BadRequestException(`Policy number ${fields.policyNo} is already in use - choose a different one.`);
+    const policyNo = (fields.policyNo ?? '').trim();
+    if (!policyNo) throw new BadRequestException('Enter a policy number.');
+    const existing = await this.findPolicyByNumber(policyNo);
+    if (existing) {
+      throw new ConflictException(
+        `POLICY_NO_TAKEN: Policy number ${existing.policyNo} already belongs to ${existing.client?.fullName ?? 'another client'}` +
+        `${existing.product ? ' (' + existing.product.name + ')' : ''}. If this row is that same policy, mark it as already in the system; otherwise give it a different number.`,
+      );
+    }
 
     const product = await this.productsRepo.findOne({ where: { id: issue.productId } });
     if (!product) throw new NotFoundException('Product not found');
@@ -591,7 +600,7 @@ export class RosterImportService {
     });
     const policy = await this.policiesRepo.save(
       this.policiesRepo.create({
-        policyNo: fields.policyNo, client, product,
+        policyNo, client, product,
         sumAssured: (fields.sumAssured ?? 0).toFixed(2), monthlyPremium: fields.premium.toFixed(2),
         commencementDate: fields.commencementDate, maturityDate: fields.maturityDate ?? null,
         paymentMethod: 'Payroll Deduction', status: fields.status,
@@ -603,6 +612,72 @@ export class RosterImportService {
       status: 'Resolved', resolvedPolicyId: policy.id, resolvedBy: actor.id, resolvedAt: new Date(),
     });
     return policy;
+  }
+
+  /** Finds a policy by number the same forgiving way the import does (spaces, case and leading zeros ignored). */
+  private async findPolicyByNumber(policyNo: string): Promise<PolicyEntity | null> {
+    const target = normalizePolicyNo(policyNo);
+    const exact = await this.policiesRepo.findOne({ where: { policyNo }, relations: ['client', 'product'] });
+    if (exact) return exact;
+    const all = await this.policiesRepo.find({ select: ['id', 'policyNo'] });
+    const hit = all.find((p) => normalizePolicyNo(p.policyNo) === target);
+    return hit ? this.policiesRepo.findOne({ where: { id: hit.id }, relations: ['client', 'product'] }) : null;
+  }
+
+  /** Next unused number in the same series, e.g. SSP037 is taken and SSP051 is the highest -> SSP052. */
+  private async suggestNextPolicyNo(policyNo: string): Promise<string | null> {
+    const m = String(policyNo).replace(/\s+/g, '').toUpperCase().match(/^([A-Z]+)(\d+)$/);
+    if (!m) return null;
+    const prefix = m[1];
+    let max = 0, width = m[2].length;
+    for (const p of await this.policiesRepo.find({ select: ['policyNo'] })) {
+      const pm = String(p.policyNo).replace(/\s+/g, '').toUpperCase().match(/^([A-Z]+)(\d+)$/);
+      if (pm && pm[1] === prefix) { max = Math.max(max, Number(pm[2])); width = Math.max(width, pm[2].length); }
+    }
+    // Also skip numbers already typed into other rows still waiting to be fixed.
+    for (const i of await this.issuesRepo.find({ where: { status: 'Pending' as any } })) {
+      const pm = String(i.rawData?.policyNo ?? '').replace(/\s+/g, '').toUpperCase().match(/^([A-Z]+)(\d+)$/);
+      if (pm && pm[1] === prefix) max = Math.max(max, Number(pm[2]));
+    }
+    return `${prefix}${String(max + 1).padStart(width, '0')}`;
+  }
+
+  /** Used by the fix form: is this number free, and if not, whose is it and what number could be used instead. */
+  async checkPolicyNo(issueId: string, policyNo: string) {
+    const issue = await this.issuesRepo.findOne({ where: { id: issueId } });
+    if (!issue) throw new NotFoundException('Import issue not found');
+    const existing = policyNo ? await this.findPolicyByNumber(policyNo.trim()) : null;
+    const d: any = issue.rawData || {};
+    return {
+      taken: !!existing,
+      existing: existing ? {
+        id: existing.id, policyNo: existing.policyNo, clientName: existing.client?.fullName ?? null, productName: existing.product?.name ?? null,
+        payrollPinCode: existing.payrollPinCode, monthlyPremium: Number(existing.monthlyPremium), status: existing.status, commencementDate: existing.commencementDate,
+        sameProduct: existing.product?.id === issue.productId,
+        sameName: !!existing.client?.fullName && !!d.name && existing.client.fullName.trim().toLowerCase() === String(d.name).trim().toLowerCase(),
+        samePincode: !!existing.payrollPinCode && !!d.pincode && existing.payrollPinCode === d.pincode,
+      } : null,
+      suggestedPolicyNo: existing ? await this.suggestNextPolicyNo(policyNo) : null,
+    };
+  }
+
+  /**
+   * The row is a policy that is already in the system (e.g. re-uploaded roster, or the same client listed twice).
+   * Closes the issue against that policy, and fills in the payroll pincode / broker only where the policy has none.
+   */
+  async linkIssueToExisting(issueId: string, policyNo: string, actor: AuthenticatedUser) {
+    const issue = await this.issuesRepo.findOne({ where: { id: issueId } });
+    if (!issue) throw new NotFoundException('Import issue not found');
+    if (issue.status !== 'Pending') throw new BadRequestException('This issue has already been resolved or dismissed.');
+    const policy = await this.findPolicyByNumber((policyNo ?? '').trim());
+    if (!policy) throw new NotFoundException(`No policy ${policyNo} was found.`);
+    const d: any = issue.rawData || {};
+    const fill: Partial<PolicyEntity> = {};
+    if (!policy.payrollPinCode && d.pincode) fill.payrollPinCode = d.pincode;
+    if (!policy.brokerName && d.broker) fill.brokerName = d.broker;
+    if (Object.keys(fill).length) await this.policiesRepo.update(policy.id, fill);
+    await this.issuesRepo.update(issueId, { status: 'Resolved', resolvedPolicyId: policy.id, resolvedBy: actor.id, resolvedAt: new Date() });
+    return { linked: true, policyNo: policy.policyNo, filledIn: Object.keys(fill) };
   }
 
   async dismissIssue(issueId: string, actor: AuthenticatedUser): Promise<void> {

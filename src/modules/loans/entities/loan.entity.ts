@@ -68,6 +68,10 @@ export class LoanEntity {
   @Column({ type: 'uuid' })
   requestedBy: string;
 
+  /** 'Staff' or 'Client App' - for a client-app request, requestedBy holds the client's own id. */
+  @Column({ default: 'Staff' })
+  requestedVia: string;
+
   @CreateDateColumn()
   requestedAt: Date;
 

@@ -41,6 +41,18 @@ export class RosterImportController {
     return this.rosterImportService.resolveIssue(id, dto, actor);
   }
 
+  @Get('issues/:id/check-policy-no')
+  async checkPolicyNo(@Param('id') id: string, @Query('policyNo') policyNo: string) {
+    return this.rosterImportService.checkPolicyNo(id, policyNo || '');
+  }
+
+  @Post('issues/:id/link-existing')
+  @AuditLog({ action: 'roster_import.issue_linked_existing', entityType: 'roster_import_issue' })
+  async linkExisting(@Param('id') id: string, @Body('policyNo') policyNo: string, @CurrentUser() actor: AuthenticatedUser) {
+    if (!policyNo) throw new BadRequestException('policyNo is required.');
+    return this.rosterImportService.linkIssueToExisting(id, policyNo, actor);
+  }
+
   @Post('issues/:id/dismiss')
   @AuditLog({ action: 'roster_import.issue_dismissed', entityType: 'roster_import_issue' })
   async dismissIssue(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser) {

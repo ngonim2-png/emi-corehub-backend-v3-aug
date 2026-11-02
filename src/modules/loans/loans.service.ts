@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { DomainEvents, LoanStatusChangedEvent } from '../../common/events/domain-events';
 import { LoanEntity, computeLoanFigures } from './entities/loan.entity';
 import { LoanRepaymentEntity } from './entities/loan-repayment.entity';
 import { PaymentEntity } from '../field-collection-wallet/entities/payment.entity';
@@ -22,7 +24,14 @@ export class LoansService {
     @InjectRepository(PaymentEntity) private readonly paymentsRepo: Repository<PaymentEntity>,
     @InjectRepository(ClientEntity) private readonly clientsRepo: Repository<ClientEntity>,
     private readonly dataSource: DataSource,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
+
+  private emitStatus(loan: LoanEntity): void {
+    this.eventEmitter.emit(DomainEvents.LoanStatusChanged, {
+      loanId: loan.id, clientId: loan.client?.id, status: loan.status, amountMajor: Number(loan.principal),
+    } as LoanStatusChangedEvent);
+  }
 
   /** Counts distinct (policy, month) real payments for this client, across every policy they hold - not just one. */
   async checkEligibility(clientId: string): Promise<{ eligible: boolean; monthsPaid: number; monthsRequired: number }> {
@@ -39,7 +48,7 @@ export class LoansService {
     return { eligible: monthsPaid >= MIN_MONTHS_PREMIUM_PAID_FOR_ELIGIBILITY, monthsPaid, monthsRequired: MIN_MONTHS_PREMIUM_PAID_FOR_ELIGIBILITY };
   }
 
-  async create(dto: CreateLoanDto, actor: AuthenticatedUser): Promise<LoanEntity> {
+  async create(dto: CreateLoanDto, actor: AuthenticatedUser, via: 'Staff' | 'Client App' = 'Staff'): Promise<LoanEntity> {
     const client = await this.clientsRepo.findOne({ where: { id: dto.clientId } });
     if (!client) throw new NotFoundException('Client not found.');
 
@@ -68,6 +77,7 @@ export class LoansService {
         monthlyPayment: monthlyPayment.toFixed(2),
         status: 'Pending Life Manager Approval',
         requestedBy: actor.id,
+        requestedVia: via,
       }),
     );
   }
@@ -101,7 +111,9 @@ export class LoansService {
       lifeManagerNotes: notes ?? null,
       status: decision === 'Approved' ? 'Pending Finance Director Approval' : 'Rejected',
     });
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    this.emitStatus(updated);
+    return updated;
   }
 
   async financeDirectorDecide(id: string, decision: 'Approved' | 'Rejected', notes: string | undefined, actor: AuthenticatedUser): Promise<LoanEntity> {
@@ -119,7 +131,9 @@ export class LoansService {
       financeDirectorNotes: notes ?? null,
       status: decision === 'Approved' ? 'Approved' : 'Rejected',
     });
-    return this.findOne(id);
+    const updated = await this.findOne(id);
+    this.emitStatus(updated);
+    return updated;
   }
 
   /** Marks the loan Disbursed and creates the full monthly repayment schedule in one transaction - both happen together or neither does. */
@@ -140,7 +154,9 @@ export class LoansService {
         );
       }
     });
-    return this.findOne(id);
+    const disbursed = await this.findOne(id);
+    this.emitStatus(disbursed);
+    return disbursed;
   }
 
   async findRepayments(loanId: string): Promise<LoanRepaymentEntity[]> {
