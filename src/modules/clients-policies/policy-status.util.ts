@@ -23,6 +23,26 @@ export interface BusinessRules {
 
 const DEFAULT_PAYROLL_RECEIPT_DAY = 10;
 
+/**
+ * The policy's maturity date, or null when the stored date can't be real:
+ * a year before 1900 (a typing error such as 0229-06-30 for 2029-06-30)
+ * or a date before the policy started. An impossible date is treated as
+ * "no maturity date" so the policy is never wrongly shown as matured.
+ */
+export function validMaturityDate(policy: { maturityDate?: string | null; commencementDate?: string | null }): string | null {
+  const m = policy.maturityDate ? String(policy.maturityDate).slice(0, 10) : '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(m)) return null;
+  if (Number(m.slice(0, 4)) < 1900) return null;
+  if (policy.commencementDate && m < String(policy.commencementDate).slice(0, 10)) return null;
+  return m;
+}
+
+/** 'YYYY-MM' of validMaturityDate, or null. */
+export function policyMaturityMonth(policy: { maturityDate?: string | null; commencementDate?: string | null }): string | null {
+  const d = validMaturityDate(policy);
+  return d ? d.slice(0, 7) : null;
+}
+
 /** Reads the business rules from configuration, so every caller uses the same values. */
 export function businessRulesFromConfig(config: { get<T = any>(key: string): T | undefined }): Required<BusinessRules> {
   return {

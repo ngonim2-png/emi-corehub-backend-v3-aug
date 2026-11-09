@@ -10,7 +10,7 @@ import { ClaimsService } from '../claims/claims.service';
 import { UnderwritingService } from '../underwriting/underwriting.service';
 import { DocumentsService } from '../documents/documents.service';
 import { CrmService } from '../crm/crm.service';
-import { computePolicyStatus, businessRulesFromConfig, isPayrollDeductionPolicy } from './policy-status.util';
+import { computePolicyStatus, businessRulesFromConfig, isPayrollDeductionPolicy, policyMaturityMonth } from './policy-status.util';
 import { Money } from '../../common/utils/money.util';
 
 /**
@@ -57,7 +57,7 @@ export class ClientProfileController {
         const computed = computePolicyStatus(
           {
             commencementMonth: policy.commencementDate.slice(0, 7),
-            maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
+            maturityMonth: policyMaturityMonth(policy),
             monthlyPremiumMinor: Money.fromMajor(policy.monthlyPremium).toMinor(),
             paymentsByMonth,
             payrollDeduction: isPayrollDeductionPolicy(policy),

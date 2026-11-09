@@ -10,7 +10,7 @@ import { CreatePolicyDto } from './dto/create-policy.dto';
 import { DomainEvents, PolicyStatusChangedEvent } from '../../common/events/domain-events';
 import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import { BusinessRules, computePolicyStatus, businessRulesFromConfig, isPayrollDeductionPolicy, premiumOverdueFrom, prevMonth } from './policy-status.util';
+import { BusinessRules, computePolicyStatus, businessRulesFromConfig, isPayrollDeductionPolicy, premiumOverdueFrom, prevMonth, policyMaturityMonth } from './policy-status.util';
 import { FILE_STORAGE, FileStorageAdapter } from '../documents/adapters/file-storage.adapter';
 import { PaymentsService } from '../field-collection-wallet/payments.service';
 import { Money } from '../../common/utils/money.util';
@@ -86,7 +86,7 @@ export class PoliciesService {
       const computed = computePolicyStatus(
         {
           commencementMonth: policy.commencementDate.slice(0, 7),
-          maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
+          maturityMonth: policyMaturityMonth(policy),
           monthlyPremiumMinor: Money.fromMajor(policy.monthlyPremium).toMinor(),
           paymentsByMonth,
           payrollDeduction: isPayrollDeductionPolicy(policy),
@@ -105,7 +105,7 @@ export class PoliciesService {
         monthlyPremium: Number(policy.monthlyPremium),
         sumAssured: Number(policy.sumAssured),
         commencementMonth: policy.commencementDate.slice(0, 7),
-        maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
+        maturityMonth: policyMaturityMonth(policy),
         status: policy.status === 'Cancelled' ? 'Cancelled' : computed.status,
         totalExpected: Money.fromMinor(computed.totalExpectedMinor).toMajor(),
         totalPaid: Money.fromMinor(computed.totalPaidMinor).toMajor(),
@@ -155,13 +155,15 @@ export class PoliciesService {
         const ag = Money.fromMajor(m.ag).toMinor();
         agMinor += ag;
         const start = p.commencementDate.slice(0, 7);
-        const end = p.maturityDate ? p.maturityDate.slice(0, 7) : '9999-12';
-        if (ag > 0 && (p.status === 'Cancelled' || month < start || month > end)) { agOutsideMinor += ag; agOutsideCount++; }
+        const end = (policyMaturityMonth(p) ?? '9999-12');
+        if (ag > 0 && p.status === 'Cancelled') { agOutsideMinor += ag; agOutsideCount++; }
       }
       for (const p of policies) {
         const start = p.commencementDate.slice(0, 7);
-        const end = p.maturityDate ? p.maturityDate.slice(0, 7) : '9999-12';
-        if (month < start || month > end) continue;
+        const end = (policyMaturityMonth(p) ?? '9999-12');
+        // An AG deduction for this month counts in full, even if the policy's dates say otherwise.
+        const agThisMonth = ((split.get(p.id) ?? {})[month]?.ag ?? 0) > 0;
+        if ((month < start || month > end) && !agThisMonth) continue;
         const premium = Money.fromMajor(p.monthlyPremium).toMinor();
         const paid = Money.fromMajor((paymentsByPolicy.get(p.id) ?? {})[month] ?? 0).toMinor();
         otherMinor += Math.max(Money.fromMajor((split.get(p.id) ?? {})[month]?.other ?? 0).toMinor(), 0);
@@ -188,7 +190,7 @@ export class PoliciesService {
         receivedAg: Money.fromMinor(agMinor).toMajor(),
         /** Cash, mobile money and other payments on these policies for this month. */
         receivedOther: Money.fromMinor(otherMinor).toMajor(),
-        /** AG money on policies that are cancelled or whose cover dates don't include this month (dates to check). */
+        /** AG money on policies that are cancelled. */
         agOutsideCover: Money.fromMinor(agOutsideMinor).toMajor(),
         agOutsideCoverPolicies: agOutsideCount,
         shortfall: Money.fromMinor(Math.max(expectedMinor - receivedMinor, 0)).toMajor(),
@@ -213,9 +215,10 @@ export class PoliciesService {
     const rows = [];
     for (const p of policies) {
       const start = p.commencementDate.slice(0, 7);
-      const end = p.maturityDate ? p.maturityDate.slice(0, 7) : '9999-12';
-      if (month < start || month > end) continue;
+      const end = (policyMaturityMonth(p) ?? '9999-12');
       const byMonth = paymentsByPolicy.get(p.id) ?? {};
+      // Same rule as the summary: an AG deduction for this month counts, whatever the policy's dates.
+      if ((month < start || month > end) && !(Number(byMonth[month] ?? 0) > 0)) continue;
       const premiumMinor = Money.fromMajor(p.monthlyPremium).toMinor();
       const receivedMinor = Math.max(Money.fromMajor(byMonth[month] ?? 0).toMinor(), 0);
       const paidMonths = Object.entries(byMonth).filter(([, v]) => Number(v) > 0).map(([m]) => m).sort();
@@ -390,7 +393,7 @@ export class PoliciesService {
     const computed = computePolicyStatus(
       {
         commencementMonth: policy.commencementDate.slice(0, 7),
-        maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
+        maturityMonth: policyMaturityMonth(policy),
         monthlyPremiumMinor: Math.round(Number(policy.monthlyPremium) * 100),
         paymentsByMonth,
         payrollDeduction: isPayrollDeductionPolicy(policy),

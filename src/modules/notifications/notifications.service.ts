@@ -10,6 +10,7 @@ import { UserEntity } from '../identity-access/entities/user.entity';
 import { SendBulkSmsDto } from './dto/send-bulk-sms.dto';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { PoliciesService } from '../clients-policies/policies.service';
+import { validMaturityDate } from '../clients-policies/policy-status.util';
 
 export interface QueueSmsInput {
   toPhone: string;
@@ -120,7 +121,7 @@ export class NotificationsService {
       const cutoffStr = cutoff.toISOString().slice(0, 10);
       const policies = await this.policiesService.findAllWithClientAndProduct();
       return policies
-        .filter((p) => p.maturityDate && p.maturityDate <= cutoffStr && p.client.smsConsent)
+        .filter((p) => { const m = validMaturityDate(p); return !!m && m <= cutoffStr && p.client.smsConsent; })
         .map((p) => ({
           clientId: p.client.id, clientName: p.client.fullName, phone: p.client.phone,
           policyNo: p.policyNo, detail: `Matures ${p.maturityDate}`,

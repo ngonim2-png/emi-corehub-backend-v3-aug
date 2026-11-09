@@ -369,8 +369,6 @@ export class DeductionImportService {
    * - Payment reversed: it was posted, then reversed, so it no longer counts as received.
    * - Amount differs: the payment already in CoreHub (e.g. from an earlier upload)
    *   is for a different amount than this line of the file.
-   * - Outside cover dates: counted as received, but the policy is cancelled, or its
-   *   start date is after this month, or it matured before it. Usually a date to fix.
    */
   async reconcile(period: string, recsIn?: DeductionImportRecordEntity[]) {
     const recs = (recsIn ?? (await this.currentRecords(period))).filter((r) => (r.status === 'Posted' || r.status === 'AlreadyPosted') && r.matchedPaymentId);
@@ -394,17 +392,8 @@ export class DeductionImportService {
         totals.amountDiffers += diff; totals.amountDiffersLines++;
         rows.push({ ...base, issue: `Recorded as NLe ${Number(pay.amount).toLocaleString('en-GB')}, file says NLe ${line.toLocaleString('en-GB')}`, difference: diff });
       }
-      if (pol) {
-        const start = String(pol.commencementDate || '').slice(0, 7);
-        const end = pol.maturityDate ? String(pol.maturityDate).slice(0, 7) : '9999-12';
-        const why = pol.status === 'Cancelled' ? 'Policy is cancelled'
-          : period < start ? `Deducted before the policy start date (${pol.commencementDate})`
-          : period > end ? `Deducted after the policy matured (${pol.maturityDate})` : '';
-        if (why) {
-          totals.outsideCover += Number(pay.amount); totals.outsideCoverLines++;
-          rows.push({ ...base, issue: why, difference: 0 });
-        }
-      }
+      // The policy's start or maturity date is not a reason to question an AG deduction:
+      // it is recorded and counted as a normal payment for that month.
     }
     rows.sort((x, y) => x.employeeName.localeCompare(y.employeeName));
     return { totals, rows };

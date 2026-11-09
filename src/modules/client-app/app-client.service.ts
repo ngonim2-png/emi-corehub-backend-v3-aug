@@ -12,7 +12,7 @@ import { PaymentEntity } from '../field-collection-wallet/entities/payment.entit
 import { PaymentsService } from '../field-collection-wallet/payments.service';
 import { ClaimsService } from '../claims/claims.service';
 import { LoansService } from '../loans/loans.service';
-import { computePolicyStatus, businessRulesFromConfig, isPayrollDeductionPolicy } from '../clients-policies/policy-status.util';
+import { computePolicyStatus, businessRulesFromConfig, isPayrollDeductionPolicy, policyMaturityMonth } from '../clients-policies/policy-status.util';
 import { Money } from '../../common/utils/money.util';
 import { AppFileEntity } from './entities/app-file.entity';
 import { AppRequestEntity } from './entities/app-request.entity';
@@ -68,7 +68,7 @@ export class AppClientService {
     const computed = computePolicyStatus(
       {
         commencementMonth: policy.commencementDate.slice(0, 7),
-        maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
+        maturityMonth: policyMaturityMonth(policy),
         monthlyPremiumMinor: Money.fromMajor(policy.monthlyPremium).toMinor(),
         paymentsByMonth,
         payrollDeduction: isPayrollDeductionPolicy(policy),

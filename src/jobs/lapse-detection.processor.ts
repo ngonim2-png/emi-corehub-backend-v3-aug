@@ -4,7 +4,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PoliciesService } from '../modules/clients-policies/policies.service';
 import { PaymentsService } from '../modules/field-collection-wallet/payments.service';
-import { computePolicyStatus, ym, PolicyForStatusCalc, businessRulesFromConfig, isPayrollDeductionPolicy } from '../modules/clients-policies/policy-status.util';
+import { computePolicyStatus, ym, PolicyForStatusCalc, businessRulesFromConfig, isPayrollDeductionPolicy, policyMaturityMonth } from '../modules/clients-policies/policy-status.util';
 import { Money } from '../common/utils/money.util';
 
 @Processor('jobs')
@@ -37,7 +37,7 @@ export class LapseDetectionProcessor extends WorkerHost {
       }
 
       const commencementMonth = policy.commencementDate.slice(0, 7);
-      const maturityMonth = policy.maturityDate ? policy.maturityDate.slice(0, 7) : null;
+      const maturityMonth = policyMaturityMonth(policy);
 
       const input: PolicyForStatusCalc = {
         commencementMonth,

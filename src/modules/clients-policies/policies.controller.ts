@@ -9,7 +9,7 @@ import { PoliciesService } from './policies.service';
 import { CreatePolicyDto } from './dto/create-policy.dto';
 import { EditPolicyNumberDto } from './dto/edit-policy-number.dto';
 import { PaymentsService } from '../field-collection-wallet/payments.service';
-import { computePolicyStatus, businessRulesFromConfig } from './policy-status.util';
+import { computePolicyStatus, businessRulesFromConfig, validMaturityDate } from './policy-status.util';
 import { Money } from '../../common/utils/money.util';
 import { buildExcelExport } from '../../common/utils/excel-export.util';
 import { sendExcelFile } from '../../common/utils/send-excel-file.util';
@@ -187,7 +187,7 @@ export class PoliciesController {
 
     const policies = await this.policiesService.findAllWithClientAndProduct();
     return policies
-      .filter((p) => p.maturityDate && p.maturityDate <= cutoffStr)
+      .filter((p) => validMaturityDate(p) && (validMaturityDate(p) as string) <= cutoffStr)
       .map((p) => ({
         policyId: p.id,
         policyNo: p.policyNo,

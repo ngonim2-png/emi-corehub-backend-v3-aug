@@ -7,7 +7,7 @@ import { PolicyEntity } from '../clients-policies/entities/policy.entity';
 import { ClientEntity } from '../clients-policies/entities/client.entity';
 import { PaymentsService } from '../field-collection-wallet/payments.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { computePolicyStatus, businessRulesFromConfig, isPayrollDeductionPolicy } from '../clients-policies/policy-status.util';
+import { computePolicyStatus, businessRulesFromConfig, isPayrollDeductionPolicy, policyMaturityMonth, validMaturityDate } from '../clients-policies/policy-status.util';
 import { Money } from '../../common/utils/money.util';
 import { CreateTriggerDto, UpdateTriggerDto } from './dto/trigger.dto';
 
@@ -150,7 +150,7 @@ export class LifecycleTriggersService {
       const computed = computePolicyStatus(
         {
           commencementMonth: policy.commencementDate.slice(0, 7),
-          maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
+          maturityMonth: policyMaturityMonth(policy),
           monthlyPremiumMinor: Money.fromMajor(policy.monthlyPremium).toMinor(),
           paymentsByMonth,
           payrollDeduction: isPayrollDeductionPolicy(policy),
@@ -182,14 +182,15 @@ export class LifecycleTriggersService {
     const policies = await this.policiesRepo.find({ relations: ['client', 'product'] });
     let fired = 0;
     for (const policy of policies) {
-      if (!policy.maturityDate || policy.maturityDate > cutoffStr || policy.maturityDate < new Date().toISOString().slice(0, 10)) continue;
+      const mDate = validMaturityDate(policy);
+      if (!mDate || mDate > cutoffStr || mDate < new Date().toISOString().slice(0, 10)) continue;
       if (!policy.client?.smsConsent) continue;
       if (await this.alreadyFired(trigger.id, policy.id)) continue;
       await this.dispatchSms({
         toPhone: policy.client.phone, relatedType: 'trigger', relatedId: trigger.id,
         templateCode: 'LIFECYCLE_RENEWAL',
         body: this.renderTemplate(trigger.messageTemplate, {
-          clientName: policy.client.fullName, policyNo: policy.policyNo, maturityDate: policy.maturityDate,
+          clientName: policy.client.fullName, policyNo: policy.policyNo, maturityDate: mDate,
         }),
       });
       await this.recordFire(trigger.id, 'policy', policy.id);
