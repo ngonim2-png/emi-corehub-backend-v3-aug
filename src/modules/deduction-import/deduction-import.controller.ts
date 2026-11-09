@@ -43,6 +43,7 @@ export class DeductionImportController {
   }
 
   @Get('records')
+  @Roles('Super Admin', 'Finance Manager', 'Finance Director', 'Internal Auditor')
   async listRecords(
     @Query('period') period?: string,
     @Query('status') status?: DeductionRecordStatus,

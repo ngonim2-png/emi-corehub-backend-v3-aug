@@ -47,17 +47,20 @@ export class PoliciesController {
 
   /** AG payroll deduction collection, month by month: expected, received, and whether the month's file is in. */
   @Get('reports/payroll-collection')
+  @Roles('Super Admin', 'Finance Manager', 'Finance Director', 'Internal Auditor')
   async payrollCollection(@Query('months') months?: string) {
     return this.policiesService.payrollCollectionSummary(Math.min(Math.max(parseInt(months ?? '6', 10) || 6, 1), 24));
   }
 
   /** The policies behind one month of the AG payroll table: status=paid, unpaid (not paid or part paid) or all. */
   @Get('reports/payroll-collection/:month/policies')
+  @Roles('Super Admin', 'Finance Manager', 'Finance Director', 'Internal Auditor')
   async payrollMonthPolicies(@Param('month') month: string, @Query('status') status?: string) {
     return this.policiesService.payrollMonthPolicies(month, status === 'paid' || status === 'unpaid' ? status : 'all');
   }
 
   @Get('reports/payroll-collection/:month/policies/export')
+  @Roles('Super Admin', 'Finance Manager', 'Finance Director', 'Internal Auditor')
   async exportPayrollMonthPolicies(@Param('month') month: string, @Query('status') status: string | undefined, @Res() res: Response) {
     const which = status === 'paid' || status === 'unpaid' ? status : 'all';
     const rows = await this.policiesService.payrollMonthPolicies(month, which);
