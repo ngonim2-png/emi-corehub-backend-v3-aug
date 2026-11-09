@@ -99,6 +99,7 @@ export class PaymentsService {
       receiptNo,
       marketerId: dto.marketerId ?? '',
       paymentMethod: dto.paymentMethod,
+      payrollPinCode: policy.payrollPinCode ?? null,
     };
     this.eventEmitter.emit(DomainEvents.PaymentPosted, event);
 

@@ -34,7 +34,8 @@ export class FinanceEventListener {
    * receivable account does not exist, it falls back to one entry dated today.
    */
   private async postPayrollAccrual(event: PaymentPostedEvent, drAccount: string, today: string): Promise<boolean> {
-    if (event.paymentMethod !== 'Payroll Deduction' || !(event.amountMajor > 0)) return false;
+    // Only AG deductions (a policy with a payroll pincode) arrive a month late.
+    if (event.paymentMethod !== 'Payroll Deduction' || !(event.payrollPinCode && String(event.payrollPinCode).trim()) || !(event.amountMajor > 0)) return false;
     if (!/^\d{4}-\d{2}$/.test(event.paymentMonth || '')) return false;
     const [y, m] = event.paymentMonth.split('-').map(Number);
     const monthEnd = `${event.paymentMonth}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;

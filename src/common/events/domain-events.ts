@@ -35,6 +35,8 @@ export interface PaymentPostedEvent {
   receiptNo: string;
   marketerId: string;
   paymentMethod: string;
+  /** The policy's AG payroll pincode, if it has one. */
+  payrollPinCode?: string | null;
 }
 
 export interface PolicyStatusChangedEvent {

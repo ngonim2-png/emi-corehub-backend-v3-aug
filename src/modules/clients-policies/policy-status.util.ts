@@ -34,12 +34,14 @@ export function businessRulesFromConfig(config: { get<T = any>(key: string): T |
 }
 
 /**
- * True when the premium is collected through an AG pincode payroll
- * deduction: the policy's payment method is "Payroll Deduction", or it
- * carries an AG payroll pincode.
+ * True only when the policy carries an Accountant General payroll pincode.
+ * Only these policies have their premium deducted automatically by the AG,
+ * arriving by payrollReceiptDay of the following month. Every other policy
+ * (including one whose payment method says "Payroll Deduction" but has no
+ * pincode) pays by other means and is due on the normal premium due day.
  */
 export function isPayrollDeductionPolicy(policy: { paymentMethod?: string | null; payrollPinCode?: string | null }): boolean {
-  return policy.paymentMethod === 'Payroll Deduction' || !!(policy.payrollPinCode && String(policy.payrollPinCode).trim());
+  return !!(policy.payrollPinCode && String(policy.payrollPinCode).trim());
 }
 
 export interface PolicyForStatusCalc {
