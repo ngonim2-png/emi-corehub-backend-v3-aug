@@ -4,3 +4,10 @@ dist/
 .env.production
 *.log
 .DS_Store
+
+# Local copies and Redis dump files - never upload
+corehub_V3/
+emi-backend/
+emi-corehub-backend/
+dump.rdb
+**/dump.rdb
