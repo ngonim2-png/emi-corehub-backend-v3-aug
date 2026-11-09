@@ -192,7 +192,7 @@ export class PaymentsService {
   }
 
   async findByIdempotencyKey(idempotencyKey: string): Promise<PaymentEntity | null> {
-    return this.paymentsRepo.findOne({ where: { idempotencyKey } });
+    return this.paymentsRepo.findOne({ where: { idempotencyKey }, relations: ['policy'] });
   }
 
   /**

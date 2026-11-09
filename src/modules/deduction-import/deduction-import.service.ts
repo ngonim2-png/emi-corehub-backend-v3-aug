@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as XLSX from 'xlsx';
+import { randomUUID } from 'crypto';
 import { DeductionImportRecordEntity, DeductionRecordStatus } from './entities/deduction-import-record.entity';
 import { PolicyEntity } from '../clients-policies/entities/policy.entity';
 import { PaymentsService } from '../field-collection-wallet/payments.service';
@@ -13,6 +14,12 @@ interface ParsedDeductionRow {
   pincode: string;
   employeeName: string;
   amount: number;
+}
+
+/** Pincodes compare ignoring spaces, case and leading zeros: " 0111389" matches "111389". */
+export function normalizePincode(v: unknown): string {
+  const s = String(v ?? '').replace(/\s+/g, '').toUpperCase();
+  return /^\d+$/.test(s) ? s.replace(/^0+(?=\d)/, '') : s;
 }
 
 const FULL_MONTH_NAMES: Record<string, number> = {
@@ -203,6 +210,22 @@ export class DeductionImportService {
     private readonly paymentsService: PaymentsService,
   ) {}
 
+  /**
+   * Turns one month of AG deduction lines into payments.
+   *
+   * - Every line is recorded. The AG file can list the same pincode more
+   *   than once in a month (a person with two policies, or an extra
+   *   deduction); each line is its own payment. The duplicate guard key is
+   *   pincode + month + the line's position for that pincode in the file
+   *   (the first line keeps the original key, so files uploaded before
+   *   this change are recognised and nothing is posted twice).
+   * - When one pincode belongs to several policies, each line goes to the
+   *   policy whose monthly premium equals the amount, otherwise to the
+   *   next policy that hasn't received a line yet this month.
+   * - Pincodes match ignoring spaces, case and leading zeros.
+   * - Every line of one upload shares an importBatch id, so the dashboard
+   *   can compare the file's own total with what was recorded.
+   */
   private async processRows(
     rows: ParsedDeductionRow[],
     period: string,
@@ -210,11 +233,29 @@ export class DeductionImportService {
     actor: AuthenticatedUser,
   ): Promise<{ posted: number; alreadyPosted: number; unmatched: number; zero: number; policyCancelled: number }> {
     const counts = { posted: 0, alreadyPosted: 0, unmatched: 0, zero: 0, policyCancelled: 0 };
+    const importBatch = randomUUID();
+
+    // Index every policy with a pincode once, instead of one lookup per line.
+    const withPin = await this.policiesRepo.createQueryBuilder('p').where('p.payrollPinCode IS NOT NULL').getMany();
+    const byPin = new Map<string, PolicyEntity[]>();
+    for (const p of withPin) {
+      const k = normalizePincode(p.payrollPinCode);
+      if (!k) continue;
+      if (!byPin.has(k)) byPin.set(k, []);
+      byPin.get(k)!.push(p);
+    }
+    for (const list of byPin.values()) list.sort((x, y) => (x.createdAt < y.createdAt ? -1 : 1));
+
+    const occurrence = new Map<string, number>(); // pincode -> lines seen so far in this file
+    const usedPolicies = new Map<string, Set<string>>(); // pincode -> policies that got a line this month
 
     for (const row of rows) {
+      const pinKey = normalizePincode(row.pincode);
+      const occ = occurrence.get(pinKey) ?? 0;
+      occurrence.set(pinKey, occ + 1);
       const base = {
         period, mdaCode: row.mdaCode, mdaName: row.mdaName, pincode: row.pincode,
-        employeeName: row.employeeName, amount: row.amount.toFixed(2), sourceFileName: fileName,
+        employeeName: row.employeeName, amount: row.amount.toFixed(2), sourceFileName: fileName, importBatch,
       };
 
       if (row.amount <= 0) {
@@ -223,25 +264,39 @@ export class DeductionImportService {
         continue;
       }
 
-      const policy = await this.policiesRepo.findOne({ where: { payrollPinCode: row.pincode } });
-      if (!policy) {
+      const all = byPin.get(pinKey) ?? [];
+      if (all.length === 0) {
         await this.recordsRepo.save(this.recordsRepo.create({ ...base, status: 'Unmatched', matchedPolicyId: null, matchedPaymentId: null }));
         counts.unmatched++;
         continue;
       }
-      if (policy.status === 'Cancelled') {
-        await this.recordsRepo.save(this.recordsRepo.create({ ...base, status: 'PolicyCancelled', matchedPolicyId: policy.id, matchedPaymentId: null }));
+      const live = all.filter((p) => p.status !== 'Cancelled');
+      if (live.length === 0) {
+        await this.recordsRepo.save(this.recordsRepo.create({ ...base, status: 'PolicyCancelled', matchedPolicyId: all[0].id, matchedPaymentId: null }));
         counts.policyCancelled++;
         continue;
       }
 
-      const idempotencyKey = `deduction-${row.pincode}-${period}`;
+      if (!usedPolicies.has(pinKey)) usedPolicies.set(pinKey, new Set());
+      const used = usedPolicies.get(pinKey)!;
+      const idempotencyKey = occ === 0 ? `deduction-${row.pincode}-${period}` : `deduction-${row.pincode}-${period}-${occ + 1}`;
       const existingPayment = await this.paymentsService.findByIdempotencyKey(idempotencyKey);
       if (existingPayment) {
-        await this.recordsRepo.save(this.recordsRepo.create({ ...base, status: 'AlreadyPosted', matchedPolicyId: policy.id, matchedPaymentId: existingPayment.id }));
+        const pid = (existingPayment as any).policy?.id;
+        if (pid) used.add(pid);
+        await this.recordsRepo.save(this.recordsRepo.create({ ...base, status: 'AlreadyPosted', matchedPolicyId: pid ?? null, matchedPaymentId: existingPayment.id }));
         counts.alreadyPosted++;
         continue;
       }
+
+      const amountMinor = Math.round(row.amount * 100);
+      const notUsed = live.filter((p) => !used.has(p.id));
+      const policy =
+        notUsed.find((p) => Math.round(Number(p.monthlyPremium) * 100) === amountMinor) ??
+        notUsed[0] ??
+        live.find((p) => Math.round(Number(p.monthlyPremium) * 100) === amountMinor) ??
+        live[0];
+      used.add(policy.id);
 
       const payment = await this.paymentsService.postPayment(
         { policyId: policy.id, paymentMonth: period, amount: row.amount, paymentMethod: 'Payroll Deduction' },
@@ -253,6 +308,46 @@ export class DeductionImportService {
     }
 
     return counts;
+  }
+
+  /**
+   * What the latest AG upload for each month contained, next to what was
+   * recorded: the file's own total, and the lines that could not be
+   * recorded (no policy with that pincode, or the policy is cancelled).
+   */
+  async fileSummaryForPeriods(periods: string[]) {
+    const out: Record<string, { fileName: string; uploadedAt: Date; lines: number; total: number; recorded: number; recordedLines: number; unmatched: number; unmatchedLines: number; cancelled: number; cancelledLines: number; zeroLines: number } | null> = {};
+    for (const period of periods) {
+      const latest = await this.recordsRepo.createQueryBuilder('r')
+        .where('r.period = :period', { period }).andWhere('r.importBatch IS NOT NULL')
+        .orderBy('r.createdAt', 'DESC').limit(1).getOne();
+      if (!latest) { out[period] = null; continue; }
+      const recs = await this.recordsRepo.find({ where: { period, importBatch: latest.importBatch as string } });
+      const sum = (st: string[]) => recs.filter((r) => st.includes(r.status)).reduce((t, r) => t + Number(r.amount), 0);
+      const n = (st: string[]) => recs.filter((r) => st.includes(r.status)).length;
+      out[period] = {
+        fileName: latest.sourceFileName, uploadedAt: latest.createdAt,
+        lines: recs.length, total: recs.reduce((t, r) => t + Number(r.amount), 0),
+        recorded: sum(['Posted', 'AlreadyPosted']), recordedLines: n(['Posted', 'AlreadyPosted']),
+        unmatched: sum(['Unmatched']), unmatchedLines: n(['Unmatched']),
+        cancelled: sum(['PolicyCancelled']), cancelledLines: n(['PolicyCancelled']),
+        zeroLines: n(['Zero']),
+      };
+    }
+    return out;
+  }
+
+  /** The AG lines from the latest upload for a month that could not be recorded. */
+  async notRecordedLines(period: string) {
+    const latest = await this.recordsRepo.createQueryBuilder('r')
+      .where('r.period = :period', { period }).andWhere('r.importBatch IS NOT NULL')
+      .orderBy('r.createdAt', 'DESC').limit(1).getOne();
+    if (!latest) return [];
+    const recs = await this.recordsRepo.find({ where: { period, importBatch: latest.importBatch as string } });
+    return recs
+      .filter((r) => r.status === 'Unmatched' || r.status === 'PolicyCancelled')
+      .map((r) => ({ pincode: r.pincode, employeeName: r.employeeName, mdaName: r.mdaName ?? '', amount: Number(r.amount), reason: r.status === 'Unmatched' ? 'No policy with this pincode' : 'Policy is cancelled' }))
+      .sort((x, y) => x.employeeName.localeCompare(y.employeeName));
   }
 
   async importDeductions(

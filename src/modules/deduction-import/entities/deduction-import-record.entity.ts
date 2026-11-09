@@ -48,6 +48,10 @@ export class DeductionImportRecordEntity {
   @Column({ type: 'varchar' })
   sourceFileName: string;
 
+  /** Same id on every line of one upload, so one file's totals can be read back. */
+  @Column({ type: 'uuid', nullable: true })
+  importBatch: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }
