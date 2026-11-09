@@ -30,6 +30,12 @@ export default () => ({
     premiumDueDay: parseInt(process.env.PREMIUM_DUE_DAY ?? '5', 10),
     warningThresholdMonths: parseInt(process.env.WARNING_THRESHOLD_MONTHS ?? '2', 10),
     lapseThresholdMonths: parseInt(process.env.LAPSE_THRESHOLD_MONTHS ?? '3', 10),
+    // AG payroll deductions for a month arrive by this day of the next month.
+    payrollReceiptDay: parseInt(process.env.PAYROLL_RECEIPT_DAY ?? '10', 10),
+  },
+  finance: {
+    // Chart-of-accounts code used to carry AG payroll premiums between the month earned and the month received.
+    payrollReceivableAccount: process.env.PAYROLL_RECEIVABLE_ACCOUNT ?? '1100',
   },
   sms: {
     provider: process.env.SMS_PROVIDER ?? 'alemobet',

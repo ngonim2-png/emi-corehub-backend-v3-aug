@@ -9,7 +9,7 @@ import { PoliciesService } from './policies.service';
 import { CreatePolicyDto } from './dto/create-policy.dto';
 import { EditPolicyNumberDto } from './dto/edit-policy-number.dto';
 import { PaymentsService } from '../field-collection-wallet/payments.service';
-import { computePolicyStatus } from './policy-status.util';
+import { computePolicyStatus, businessRulesFromConfig } from './policy-status.util';
 import { Money } from '../../common/utils/money.util';
 import { buildExcelExport } from '../../common/utils/excel-export.util';
 import { sendExcelFile } from '../../common/utils/send-excel-file.util';
@@ -45,6 +45,12 @@ export class PoliciesController {
     return this.policiesService.computedReport(reportingMonth);
   }
 
+  /** AG payroll deduction collection, month by month: expected, received, and whether the month's file is in. */
+  @Get('reports/payroll-collection')
+  async payrollCollection(@Query('months') months?: string) {
+    return this.policiesService.payrollCollectionSummary(Math.min(Math.max(parseInt(months ?? '6', 10) || 6, 1), 24));
+  }
+
   @Get('reports/export')
   async exportRegister(@Query('reportingMonth') reportingMonth: string | undefined, @Res() res: Response) {
     const rows = await this.policiesService.computedReport(reportingMonth);
@@ -56,6 +62,8 @@ export class PoliciesController {
         { header: 'Phone', key: 'clientPhone', width: 16 },
         { header: 'Product', key: 'productName', width: 18 },
         { header: 'Status', key: 'status', width: 20 },
+        { header: 'Collected Via', key: 'collectionChannel', width: 14 },
+        { header: 'AG Pincode', key: 'payrollPinCode', width: 14 },
         { header: 'Monthly Premium', key: 'monthlyPremium', width: 16, numeric: true },
         { header: 'Sum Assured', key: 'sumAssured', width: 16, numeric: true },
         { header: 'Commencement', key: 'commencementMonth', width: 14 },
@@ -66,7 +74,8 @@ export class PoliciesController {
       ],
       rows.map((r) => ({
         policyNo: r.policyNo, clientName: r.clientName, clientPhone: r.clientPhone, productName: r.productName ?? '',
-        status: r.status, monthlyPremium: r.monthlyPremium, sumAssured: r.sumAssured,
+        status: r.status, collectionChannel: r.collectionChannel === 'Payroll' ? 'AG payroll' : 'Direct', payrollPinCode: r.payrollPinCode ?? '',
+        monthlyPremium: r.monthlyPremium, sumAssured: r.sumAssured,
         commencementMonth: r.commencementMonth, maturityMonth: r.maturityMonth ?? '',
         totalExpected: r.totalExpected, totalPaid: r.totalPaid, totalOutstanding: r.totalOutstanding,
       })),
@@ -124,11 +133,7 @@ export class PoliciesController {
     @Body('notes') notes: string,
     @CurrentUser() user: AuthenticatedUser,
   ) {
-    const rules = {
-      premiumDueDay: this.config.get<number>('businessRules.premiumDueDay') ?? 5,
-      warningThresholdMonths: this.config.get<number>('businessRules.warningThresholdMonths') ?? 2,
-      lapseThresholdMonths: this.config.get<number>('businessRules.lapseThresholdMonths') ?? 3,
-    };
+    const rules = businessRulesFromConfig(this.config);
     const reportingMonth = new Date().toISOString().slice(0, 7);
     const paymentsByMonthMajor = await this.paymentsService.getPaymentsByMonthForPolicy(id);
     const paymentsByMonth: Record<string, number> = {};

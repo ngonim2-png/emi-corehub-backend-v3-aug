@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { LeadershipReportsService } from './leadership-reports.service';
@@ -62,11 +62,13 @@ export class LeadershipReportsController {
 
   @Get('appraisal')
   async appraisal(@Query('userId') userId: string, @Query('month') month: string) {
+    if (!userId || !/^\d{4}-\d{2}$/.test(month || '')) throw new BadRequestException('Choose a person and a month (YYYY-MM).');
     return this.reportsService.appraisalReport(userId, month);
   }
 
   @Get('appraisal/export')
   async appraisalExport(@Query('userId') userId: string, @Query('month') month: string, @Res() res: Response) {
+    if (!userId || !/^\d{4}-\d{2}$/.test(month || '')) throw new BadRequestException('Choose a person and a month (YYYY-MM).');
     const report = await this.reportsService.appraisalReport(userId, month);
     const rows: Record<string, string | number | null>[] = [
       ...report.assignments.map((a) => ({

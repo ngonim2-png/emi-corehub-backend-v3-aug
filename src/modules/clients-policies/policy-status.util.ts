@@ -13,6 +13,33 @@ export interface BusinessRules {
   premiumDueDay: number;
   warningThresholdMonths: number;
   lapseThresholdMonths: number;
+  /**
+   * Accountant General (AG) payroll deductions for month M reach EMI by
+   * this day of month M+1. A payroll-deduction policy's premium for M is
+   * therefore not overdue until that day has passed. Defaults to 10.
+   */
+  payrollReceiptDay?: number;
+}
+
+const DEFAULT_PAYROLL_RECEIPT_DAY = 10;
+
+/** Reads the business rules from configuration, so every caller uses the same values. */
+export function businessRulesFromConfig(config: { get<T = any>(key: string): T | undefined }): Required<BusinessRules> {
+  return {
+    premiumDueDay: config.get<number>('businessRules.premiumDueDay') ?? 5,
+    warningThresholdMonths: config.get<number>('businessRules.warningThresholdMonths') ?? 2,
+    lapseThresholdMonths: config.get<number>('businessRules.lapseThresholdMonths') ?? 3,
+    payrollReceiptDay: config.get<number>('businessRules.payrollReceiptDay') ?? DEFAULT_PAYROLL_RECEIPT_DAY,
+  };
+}
+
+/**
+ * True when the premium is collected through an AG pincode payroll
+ * deduction: the policy's payment method is "Payroll Deduction", or it
+ * carries an AG payroll pincode.
+ */
+export function isPayrollDeductionPolicy(policy: { paymentMethod?: string | null; payrollPinCode?: string | null }): boolean {
+  return policy.paymentMethod === 'Payroll Deduction' || !!(policy.payrollPinCode && String(policy.payrollPinCode).trim());
 }
 
 export interface PolicyForStatusCalc {
@@ -21,6 +48,8 @@ export interface PolicyForStatusCalc {
   monthlyPremiumMinor: number; // integer minor units
   /** month key -> amount paid that month, in integer minor units */
   paymentsByMonth: Record<string, number>;
+  /** AG payroll deduction: month M is collected by payrollReceiptDay of M+1. */
+  payrollDeduction?: boolean;
 }
 
 export interface PolicyStatusResult {
@@ -40,6 +69,12 @@ export interface PolicyStatusResult {
   currentOutstandingMinor: number;
   consecutiveUnpaidMonths: number;
   lastPaidMonth: string | null;
+  /** 'Payroll' for AG payroll deduction policies, 'Direct' otherwise. */
+  collectionChannel: 'Payroll' | 'Direct';
+  /** The date (YYYY-MM-DD) the reporting month's premium becomes overdue if unpaid. */
+  currentDueDate: string;
+  /** Unpaid premium for the reporting month that is not yet overdue (e.g. waiting for the AG deduction). */
+  currentAwaitingMinor: number;
 }
 
 function pad2(n: number): string {
@@ -76,16 +111,36 @@ function monthRange(start: string, end: string): string[] {
 }
 
 /**
- * The "as of" cutoff for arrears purposes: we can never judge a policy
- * arrears based on a future calendar month, so this clamps the reporting
- * month to whichever real calendar month has actually had its due date
- * pass. Mirrors the prototype's cutoffMonth().
+ * The moment month `monthKey`'s premium becomes overdue if unpaid.
+ * Direct payers: the premium due day of the same month (unchanged
+ * behaviour). AG payroll deductions: the start of the day after
+ * payrollReceiptDay in the following month, so a deduction that arrives
+ * on the 10th is never counted as late.
  */
-export function statusCutoffMonth(reportingMonth: string, rules: BusinessRules, now = new Date()): string {
-  const curReal = ym(now.getFullYear(), now.getMonth() + 1);
-  const due = new Date(now.getFullYear(), now.getMonth(), rules.premiumDueDay);
-  const calendarCutoff = now > due ? curReal : prevMonth(curReal);
-  return minMonth(reportingMonth, calendarCutoff);
+export function premiumOverdueFrom(monthKey: string, rules: BusinessRules, payrollDeduction = false): Date {
+  const [y, m] = monthKey.split('-').map(Number);
+  if (payrollDeduction) {
+    const day = rules.payrollReceiptDay ?? DEFAULT_PAYROLL_RECEIPT_DAY;
+    return new Date(y, m, day + 1); // month index m = the following month
+  }
+  return new Date(y, m - 1, rules.premiumDueDay);
+}
+
+function dateKey(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/**
+ * The "as of" cutoff for arrears purposes: the latest month whose premium
+ * is already overdue, clamped to the reporting month. A policy is never
+ * judged in arrears for a month whose premium could still arrive on time.
+ * Mirrors the prototype's cutoffMonth(), extended for AG payroll timing.
+ */
+export function statusCutoffMonth(reportingMonth: string, rules: BusinessRules, now = new Date(), payrollDeduction = false): string {
+  let m = ym(now.getFullYear(), now.getMonth() + 1);
+  // At most two steps back: a payroll month is overdue in the month after next at the latest.
+  for (let i = 0; i < 3 && premiumOverdueFrom(m, rules, payrollDeduction) > now; i++) m = prevMonth(m);
+  return minMonth(reportingMonth, m);
 }
 
 export function computePolicyStatus(
@@ -94,7 +149,8 @@ export function computePolicyStatus(
   rules: BusinessRules,
   now = new Date(),
 ): PolicyStatusResult {
-  const cutoff = statusCutoffMonth(reportingMonth, rules, now);
+  const payroll = !!policy.payrollDeduction;
+  const cutoff = statusCutoffMonth(reportingMonth, rules, now, payroll);
   const maturity = policy.maturityMonth ?? '2099-12';
   const endMonth = minMonth(cutoff, maturity);
 
@@ -125,9 +181,13 @@ export function computePolicyStatus(
   const currentExpected = reportingInRange ? policy.monthlyPremiumMinor : 0;
   const currentPaid = policy.paymentsByMonth[reportingMonth] ?? 0;
 
-  const [ry, rm] = reportingMonth.split('-').map(Number);
-  const dueDateReporting = new Date(ry, rm - 1, rules.premiumDueDay);
-  const currentOutstanding = dueDateReporting >= now ? 0 : Math.max(currentExpected - currentPaid, 0);
+  const overdueFrom = premiumOverdueFrom(reportingMonth, rules, payroll);
+  const notYetDue = overdueFrom > now;
+  const currentUnpaid = Math.max(currentExpected - currentPaid, 0);
+  const currentOutstanding = notYetDue ? 0 : currentUnpaid;
+  const currentAwaiting = notYetDue ? currentUnpaid : 0;
+  // Last day on which the premium still counts as on time.
+  const currentDueDate = dateKey(payroll ? new Date(overdueFrom.getFullYear(), overdueFrom.getMonth(), overdueFrom.getDate() - 1) : overdueFrom);
 
   let status: PolicyStatusResult['status'];
   if (reportingMonth < policy.commencementMonth) status = 'Not Yet Commenced';
@@ -148,5 +208,8 @@ export function computePolicyStatus(
     currentOutstandingMinor: currentOutstanding,
     consecutiveUnpaidMonths: consecutive,
     lastPaidMonth,
+    collectionChannel: payroll ? 'Payroll' : 'Direct',
+    currentDueDate,
+    currentAwaitingMinor: currentAwaiting,
   };
 }

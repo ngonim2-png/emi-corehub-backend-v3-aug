@@ -10,7 +10,7 @@ import { ClaimsService } from '../claims/claims.service';
 import { UnderwritingService } from '../underwriting/underwriting.service';
 import { DocumentsService } from '../documents/documents.service';
 import { CrmService } from '../crm/crm.service';
-import { computePolicyStatus } from './policy-status.util';
+import { computePolicyStatus, businessRulesFromConfig, isPayrollDeductionPolicy } from './policy-status.util';
 import { Money } from '../../common/utils/money.util';
 
 /**
@@ -44,11 +44,7 @@ export class ClientProfileController {
       relations: ['product'],
     });
 
-    const rules = {
-      premiumDueDay: this.config.get<number>('businessRules.premiumDueDay') ?? 5,
-      warningThresholdMonths: this.config.get<number>('businessRules.warningThresholdMonths') ?? 2,
-      lapseThresholdMonths: this.config.get<number>('businessRules.lapseThresholdMonths') ?? 3,
-    };
+    const rules = businessRulesFromConfig(this.config);
     const reportingMonth = new Date().toISOString().slice(0, 7);
 
     const policiesWithStatus = await Promise.all(
@@ -64,6 +60,7 @@ export class ClientProfileController {
             maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
             monthlyPremiumMinor: Money.fromMajor(policy.monthlyPremium).toMinor(),
             paymentsByMonth,
+            payrollDeduction: isPayrollDeductionPolicy(policy),
           },
           reportingMonth,
           rules,

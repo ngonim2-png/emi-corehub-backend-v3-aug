@@ -22,6 +22,7 @@ export class SettingsController {
       premiumDueDay: this.config.get<number>('businessRules.premiumDueDay'),
       warningThresholdMonths: this.config.get<number>('businessRules.warningThresholdMonths'),
       lapseThresholdMonths: this.config.get<number>('businessRules.lapseThresholdMonths'),
+      payrollReceiptDay: this.config.get<number>('businessRules.payrollReceiptDay') ?? 10,
     };
   }
 }

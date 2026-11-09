@@ -6,43 +6,54 @@
    ===================================================================== */
 
 /* ---------- 1. Tokens ---------- */
+/* EMI palette: primary blue #1554B5 (headers, main buttons, key controls), deep base #10213F (text),
+   amber #FFB648 (sparing accent: conversion actions, savings highlights; always with deep text, never as text),
+   white #FFFFFF (cards, forms) and ice blue #EEF3FB (navigation, secondary panels). Supporting shades derived from these;
+   every text pairing checked to WCAG AA. Role names keep the Material 3 structure. */
 :root {
-  /* brand palette */
-  --c-navy-900: #0B0827; --c-navy-700: #171246;
-  --c-gold-500: #D8B850; --c-gold-700: #7A5F14; --c-gold-100: #FBF4DC; --c-gold-200: #EBDDA6;
-  /* neutrals, hue-biased towards the navy */
-  --c-ink-900: #16202C; --c-ink-700: #4E5A69; --c-ink-600: #5F6B7A; --c-ink-300: #C4CAD5; --c-ink-200: #E1E5EC; --c-ink-100: #EEF1F5; --c-ink-50: #F4F6F9; --c-white: #FFFFFF;
-  /* status palette */
-  --c-green-700: #1B6B40; --c-green-100: #E3F3EA; --c-amber-700: #7F5400; --c-amber-100: #FFF1D1; --c-amber-200: #F0D48A;
-  --c-red-700: #B0261E; --c-red-100: #FCE8E6; --c-red-200: #F1B9B4; --c-blue-700: #1A4C9C; --c-blue-100: #E6EEFA;
+  /* colour roles (light) */
+  --md-primary: #1554B5; --md-on-primary: #ffffff; --md-primary-container: #DCE7F8; --md-on-primary-container: #0B2F6B;
+  --md-secondary: #4A5874; --md-secondary-container: #DCE7F8; --md-on-secondary-container: #10213F;
+  --md-tertiary: #8A5300; --md-tertiary-container: #FFB648; --md-on-tertiary-container: #10213F; --md-tertiary-95: #FFF3E0;
+  --md-error: #ba1a1a; --md-error-container: #ffdad6; --md-on-error-container: #410002;
+  --md-surface: #FFFFFF; --md-on-surface: #10213F; --md-on-surface-variant: #4A5874;
+  --md-surface-container-lowest: #FFFFFF; --md-surface-container-low: #F6F9FD; --md-surface-container: #EEF3FB;
+  --md-surface-container-high: #E5ECF8; --md-surface-container-highest: #DAE3F3;
+  --md-outline: #7A879F; --md-outline-variant: #CCD6E6;
+  --md-inverse-surface: #10213F; --md-inverse-on-surface: #EEF3FB; --md-inverse-primary: #8DB4F5;
+  /* EMI palette, exact */
+  --emi-primary: #1554B5; --emi-primary-hover: #11469A; --emi-deep: #10213F; --emi-accent: #FFB648; --emi-accent-hover: #F2A12F; --emi-ice: #EEF3FB;
+  /* older names kept so nothing else breaks */
+  --emi-navy: var(--emi-deep); --emi-gold: var(--emi-accent);
 
   /* semantic roles - components use only these */
-  --bg: var(--c-ink-50); --surface: var(--c-white); --surface-sunken: var(--c-ink-100);
-  --text: var(--c-ink-900); --text-muted: var(--c-ink-700); --text-subtle: var(--c-ink-600); --text-on-dark: #FFFFFF; --text-on-dark-muted: #C9CCE6;
-  --border: var(--c-ink-200); --border-strong: var(--c-ink-300);
-  --brand: var(--c-navy-900); --brand-2: var(--c-navy-700);
-  --accent: var(--c-gold-500); --accent-ink: #2B2204; --accent-soft: var(--c-gold-100); --accent-line: var(--c-gold-200); --accent-strong: var(--c-gold-700);
-  --success: var(--c-green-700); --success-soft: var(--c-green-100);
-  --warning: var(--c-amber-700); --warning-soft: var(--c-amber-100); --warning-line: var(--c-amber-200);
-  --danger: var(--c-red-700); --danger-soft: var(--c-red-100); --danger-line: var(--c-red-200);
-  --info: var(--c-blue-700); --info-soft: var(--c-blue-100);
-  --focus: var(--c-gold-500);
+  --bg: var(--md-surface); --surface: var(--md-surface-container-lowest); --surface-sunken: var(--md-surface-container);
+  --text: var(--md-on-surface); --text-muted: var(--md-on-surface-variant); --text-subtle: var(--md-secondary); --text-on-dark: #FFFFFF; --text-on-dark-muted: #DCE7F8;
+  --border: var(--md-outline-variant); --border-strong: var(--md-outline);
+  --brand: var(--emi-primary); --brand-2: var(--emi-primary-hover);
+  --accent: var(--emi-accent); --accent-ink: var(--emi-deep); --accent-soft: var(--md-tertiary-95); --accent-line: #FFD9A0; --accent-strong: var(--md-tertiary);
+  --success: #1B6B40; --success-soft: #DDF3E4;
+  --warning: #7F5400; --warning-soft: #FFEFD0; --warning-line: #F0D48A;
+  --danger: var(--md-error); --danger-soft: var(--md-error-container); --danger-line: #F2B8B5;
+  --info: var(--md-primary); --info-soft: var(--md-primary-container);
+  --focus: var(--md-primary);
 
-  /* type scale in rem, so the phone's text-size setting is respected */
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --fs-xs: .78rem; --fs-sm: .875rem; --fs-md: 1rem; --fs-lg: 1.125rem; --fs-xl: 1.375rem; --fs-2xl: 1.625rem;
-  --lh-tight: 1.2; --lh: 1.45;
+  /* MD3 type scale (rem, so the phone's text-size setting is respected). Roboto is built into Android; other phones use their system font. */
+  --font: Roboto, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --fs-xs: .75rem; --fs-sm: .875rem; --fs-md: 1rem; --fs-lg: 1.375rem; --fs-xl: 1.5rem; --fs-2xl: 2rem;
+  --lh-tight: 1.25; --lh: 1.5;
   /* spacing on a 4px grid */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
-  /* shape */
-  --r-sm: 10px; --r-md: 14px; --r-lg: 20px; --r-pill: 999px;
-  --shadow-1: 0 1px 2px rgba(11,8,39,.06), 0 4px 14px rgba(11,8,39,.06);
-  --shadow-2: 0 10px 30px rgba(11,8,39,.22);
+  /* MD3 shape scale */
+  --r-xs: 4px; --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 28px; --r-pill: 999px;
+  /* MD3 elevation levels 1 and 3 */
+  --shadow-1: 0 1px 2px rgba(0,0,0,.3), 0 1px 3px 1px rgba(0,0,0,.15);
+  --shadow-2: 0 4px 8px 3px rgba(0,0,0,.15), 0 1px 3px rgba(0,0,0,.3);
   /* sizing */
   --tap: 48px; --app-max: 560px;
-  /* motion */
-  --ease-out: cubic-bezier(.23,1,.32,1); --ease-drawer: cubic-bezier(.32,.72,0,1);
-  --dur-press: 150ms; --dur-fast: 180ms; --dur-base: 260ms;
+  /* MD3 motion: standard and emphasized-decelerate easing */
+  --ease-out: cubic-bezier(.2,0,0,1); --ease-drawer: cubic-bezier(.05,.7,.1,1);
+  --dur-press: 150ms; --dur-fast: 200ms; --dur-base: 300ms;
   /* safe areas */
   --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
   /* layering */
@@ -92,7 +103,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .appbar__mark { height: 34px; width: 34px; border-radius: 8px; background: #fff; padding: 3px; flex: none; }
 .appbar__titles { flex: 1; min-width: 0; }
 .appbar__title { font-size: var(--fs-md); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.appbar__sub { display: block; font-size: var(--fs-xs); color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appbar__sub { display: block; font-size: var(--fs-xs); color: var(--text-on-dark-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .appbar .iconbtn { color: var(--text-on-dark); }
 .appbar .iconbtn:active { background: rgba(255,255,255,.12); }
 
@@ -100,7 +111,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .iconbtn { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--tap); height: var(--tap); border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); cursor: pointer; transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-press) ease; }
 .iconbtn:active { transform: scale(.94); background: var(--surface-sunken); }
 .iconbtn svg { width: 24px; height: 24px; }
-.iconbtn__count { position: absolute; top: 5px; right: 4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--accent); color: var(--brand); font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
+.iconbtn__count { position: absolute; top: 5px; right: 4px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
 
 /* Status strip under the app bar (offline) */
 .statusbar { background: var(--warning-soft); color: var(--warning); text-align: center; font-size: var(--fs-sm); font-weight: 600; padding: var(--sp-2) var(--sp-3); }
@@ -259,7 +270,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 select.control { -webkit-appearance: none; appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%); background-position: calc(100% - 20px) 50%, calc(100% - 15px) 50%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 40px; }
 textarea.control { min-height: 116px; resize: vertical; }
 .control::placeholder { color: var(--text-subtle); opacity: 1; }
-.control:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(216,184,80,.45); }
+.control:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(21,84,181,.25); }
 .control[aria-invalid="true"] { border-color: var(--danger); }
 .control[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px rgba(176,38,30,.2); }
 .control[disabled] { background-color: var(--surface-sunken); color: var(--text-muted); }
@@ -303,7 +314,7 @@ textarea.control { min-height: 116px; resize: vertical; }
 @keyframes fade-in { from { opacity: 0; } }
 
 /* Sheet (bottom dialog) */
-.sheet-backdrop { position: fixed; inset: 0; z-index: var(--z-sheet); background: rgba(11,8,39,.5); display: flex; align-items: flex-end; justify-content: center; opacity: 0; transition: opacity var(--dur-base) ease; }
+.sheet-backdrop { position: fixed; inset: 0; z-index: var(--z-sheet); background: rgba(16,33,63,.5); display: flex; align-items: flex-end; justify-content: center; opacity: 0; transition: opacity var(--dur-base) ease; }
 .sheet-backdrop.is-open { opacity: 1; }
 .sheet-backdrop.is-closing { opacity: 0; transition-duration: var(--dur-fast); }
 .sheet { background: var(--surface); width: 100%; max-width: var(--app-max); max-height: 88vh; overflow: auto; overscroll-behavior: contain; border-radius: var(--r-lg) var(--r-lg) 0 0; padding: var(--sp-2) var(--sp-4) calc(var(--sp-5) + var(--safe-b)); display: flex; flex-direction: column; gap: var(--sp-3); transform: translateY(100%); transition: transform 380ms var(--ease-drawer); }
@@ -323,6 +334,94 @@ textarea.control { min-height: 116px; resize: vertical; }
 .welcome { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--sp-2); padding: var(--sp-6) var(--sp-2) var(--sp-2); }
 .welcome__logo { width: min(300px, 82%); }
 .welcome__title { font-size: var(--fs-2xl); font-weight: 800; }
+
+/* ---------- 4b. Material Design 3 shapes, type and components ---------- */
+/* Buttons: MD3 pill shape and label-large type; the main call to action keeps EMI gold. */
+.btn { border-radius: var(--r-pill); font-size: var(--fs-sm); font-weight: 500; letter-spacing: .01em; min-height: 48px; padding: 10px 24px; }
+.btn--secondary { background: var(--md-primary); }
+.btn--outline { background: transparent; color: var(--md-primary); border: 1px solid var(--md-outline); }
+.btn--danger { background: var(--md-error-container); color: var(--md-on-error-container); }
+.btn--sm { min-height: 40px; padding: 8px 16px; border-radius: var(--r-pill); }
+.btn--primary:active:not([disabled]), .btn--secondary:active:not([disabled]) { box-shadow: none; }
+@media (hover: hover) and (pointer: fine) {
+  .btn--primary:hover, .btn--secondary:hover { box-shadow: var(--shadow-1); }
+  .btn--outline:hover { background: rgba(21,84,181,.08); border-color: var(--md-outline); }
+}
+.link { color: var(--md-primary); font-weight: 500; }
+.iconbtn { border-radius: var(--r-pill); }
+
+/* Top app bar: brand navy, MD3 title-large type */
+.appbar__title { font-size: 1.25rem; font-weight: 400; letter-spacing: 0; }
+.appbar__mark { border-radius: var(--r-sm); }
+
+/* Cards: MD3 medium shape, outlined with a flat surface instead of a drop shadow */
+.card { border-radius: var(--r-md); box-shadow: none; border-color: var(--md-outline-variant); }
+.card--hero { background: var(--emi-deep); box-shadow: var(--shadow-1); }
+.card--note { background: var(--md-tertiary-95); border-color: var(--md-tertiary-container); }
+.card__title { font-size: 1rem; font-weight: 500; letter-spacing: .01em; }
+.card__title--lg { font-size: var(--fs-lg); font-weight: 400; }
+.page-head__title { font-size: var(--fs-xl); font-weight: 400; letter-spacing: 0; }
+.section__title { font-size: var(--fs-lg); font-weight: 400; }
+.welcome__title { font-size: var(--fs-2xl); font-weight: 400; }
+.media__icon { border-radius: var(--r-lg); background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+.tile { border-radius: var(--r-md); background: var(--md-surface-container-lowest); font-weight: 500; }
+.tile svg { color: var(--md-primary); }
+
+/* Stats: MD3 filled card */
+.stat { border: 0; border-radius: var(--r-md); background: var(--md-surface-container-high); }
+.stat__value { color: var(--md-on-surface); font-weight: 500; font-size: 1.375rem; }
+.stat__label { color: var(--md-on-surface-variant); }
+
+/* Badges: MD3 chip shape and label-medium type */
+.badge { border-radius: var(--r-sm); font-weight: 500; letter-spacing: .03em; padding: 4px 10px; }
+.badge--neutral { background: var(--md-surface-container-highest); color: var(--md-on-surface-variant); }
+.badge--info { background: var(--md-primary-container); color: var(--md-on-primary-container); }
+
+/* Alerts: MD3 medium shape */
+.alert { border-radius: var(--r-md); }
+
+/* Text fields: MD3 outlined field, extra-small shape, primary focus outline */
+.control { border-radius: var(--r-xs); border: 1px solid var(--md-outline); background-color: var(--md-surface-container-lowest); }
+.control:focus { border-color: var(--md-primary); box-shadow: inset 0 0 0 1px var(--md-primary); }
+.control[aria-invalid="true"] { border-color: var(--md-error); }
+.control[aria-invalid="true"]:focus { box-shadow: inset 0 0 0 1px var(--md-error); }
+.field__label { color: var(--md-on-surface-variant); font-weight: 500; }
+.field__error { color: var(--md-error); font-weight: 500; }
+.field__error::before { background: var(--md-error); }
+.check input, .control--range { accent-color: var(--md-primary); }
+.fieldset { border-radius: var(--r-md); border-style: solid; border-color: var(--md-outline-variant); }
+.thumb { border-radius: var(--r-sm); }
+
+/* Progress: MD3 linear indicator with a gap and stop dot */
+.progress__track { height: 4px; background: var(--md-secondary-container); border-radius: var(--r-pill); }
+.progress__bar { background: var(--md-primary); border-radius: var(--r-pill); }
+.formsteps__bar { height: 4px; border-radius: var(--r-pill); background: var(--md-secondary-container); }
+.formsteps__bar--on { background: var(--md-primary); }
+.stepper__step--current .stepper__dot { background: var(--md-primary); color: var(--md-on-primary); }
+
+/* Navigation bar: MD3 surface container with a pill-shaped active indicator around the icon */
+.tabbar { background: var(--md-surface-container); border-top: 0; padding: 12px 6px calc(16px + var(--safe-b)); }
+.tabbar__item { gap: 4px; padding: 0 2px; min-height: 56px; border-radius: 0; color: var(--md-on-surface-variant); font-weight: 500; }
+.tabbar__item svg { width: 64px; height: 32px; padding: 4px 20px; border-radius: var(--r-pill); box-sizing: border-box; transition: background-color var(--dur-fast) var(--ease-out); }
+.tabbar__item[aria-current="page"] { background: transparent; color: var(--md-on-surface); }
+.tabbar__item[aria-current="page"] svg { background: var(--md-secondary-container); color: var(--md-on-secondary-container); }
+.tabbar__item:active svg { background: var(--md-surface-container-highest); }
+.page--nav { padding-bottom: calc(104px + var(--safe-b)); }
+
+/* Snackbar (toast): MD3 inverse surface, extra-small shape */
+.toast { background: var(--md-inverse-surface); color: var(--md-inverse-on-surface); border-radius: var(--r-xs); text-align: left; box-shadow: var(--shadow-2); }
+.toast--error { background: var(--md-error); color: #fff; }
+.toast-region { bottom: calc(104px + var(--safe-b)); }
+
+/* Bottom sheet: MD3 extra-large top corners and surface container low */
+.sheet { border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--md-surface-container-low); }
+.sheet__grip { width: 32px; height: 4px; background: var(--md-on-surface-variant); opacity: .4; margin-top: 6px; }
+.sheet__title { font-size: var(--fs-xl); font-weight: 400; }
+
+/* Empty, error and success states */
+.state__icon { background: var(--md-surface-container-high); }
+.state__title { font-weight: 400; font-size: var(--fs-lg); }
+.skeleton { background: linear-gradient(90deg, var(--md-surface-container-high) 25%, var(--md-surface-container) 37%, var(--md-surface-container-high) 63%); background-size: 400% 100%; }
 
 /* ---------- 5. Utilities ---------- */
 .muted { color: var(--text-muted); }
@@ -347,3 +446,6 @@ textarea.control { min-height: 116px; resize: vertical; }
   .state--success .state__icon, .alert--enter { animation: fade-in 200ms ease both; }
   .disclosure summary::before { transition: none; }
 }
+
+/* Focus ring stays visible on the navy app bar and hero card */
+.appbar :focus-visible, .card--hero :focus-visible { outline-color: var(--emi-accent); }

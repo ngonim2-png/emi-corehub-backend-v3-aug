@@ -10,7 +10,7 @@ import { CreatePolicyDto } from './dto/create-policy.dto';
 import { DomainEvents, PolicyStatusChangedEvent } from '../../common/events/domain-events';
 import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
-import { computePolicyStatus } from './policy-status.util';
+import { BusinessRules, computePolicyStatus, businessRulesFromConfig, isPayrollDeductionPolicy, premiumOverdueFrom, prevMonth } from './policy-status.util';
 import { FILE_STORAGE, FileStorageAdapter } from '../documents/adapters/file-storage.adapter';
 import { PaymentsService } from '../field-collection-wallet/payments.service';
 import { Money } from '../../common/utils/money.util';
@@ -71,11 +71,7 @@ export class PoliciesService {
    * them over time.
    */
   async computedReport(reportingMonth?: string) {
-    const rules = {
-      premiumDueDay: this.config.get<number>('businessRules.premiumDueDay') ?? 5,
-      warningThresholdMonths: this.config.get<number>('businessRules.warningThresholdMonths') ?? 2,
-      lapseThresholdMonths: this.config.get<number>('businessRules.lapseThresholdMonths') ?? 3,
-    };
+    const rules = businessRulesFromConfig(this.config);
     const month = reportingMonth ?? new Date().toISOString().slice(0, 7);
 
     const policies = await this.findAllWithClientAndProduct();
@@ -93,6 +89,7 @@ export class PoliciesService {
           maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
           monthlyPremiumMinor: Money.fromMajor(policy.monthlyPremium).toMinor(),
           paymentsByMonth,
+          payrollDeduction: isPayrollDeductionPolicy(policy),
         },
         month,
         rules,
@@ -118,9 +115,65 @@ export class PoliciesService {
         currentOutstanding: Money.fromMinor(computed.currentOutstandingMinor).toMajor(),
         consecutiveUnpaidMonths: computed.consecutiveUnpaidMonths,
         lastPaidMonth: computed.lastPaidMonth,
+        paymentMethod: policy.paymentMethod,
+        payrollPinCode: policy.payrollPinCode,
+        collectionChannel: computed.collectionChannel,
+        currentDueDate: computed.currentDueDate,
+        currentAwaiting: Money.fromMinor(computed.currentAwaitingMinor).toMajor(),
       });
     }
     return results;
+  }
+
+  /**
+   * AG payroll deduction collection for the last `months` premium months
+   * (current month included). For each month: how many payroll policies
+   * owed a premium, what was expected and received, the date the AG
+   * deduction for that month is due in, and where it stands:
+   *   'Received'       - at least 95% of the expected amount is in
+   *   'Partly received'- some of it is in
+   *   'Not due yet'    - nothing in, and the receipt day has not passed
+   *   'Overdue'        - nothing in after the receipt day
+   */
+  async payrollCollectionSummary(months = 6, now = new Date()) {
+    const rules = businessRulesFromConfig(this.config);
+    const policies = (await this.policiesRepo.find()).filter((p) => p.status !== 'Cancelled' && isPayrollDeductionPolicy(p));
+    const paymentsByPolicy = await this.paymentsService.getPaymentsByMonthForPolicies(policies.map((p) => p.id));
+    const keys: string[] = [];
+    let k = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    for (let i = 0; i < months; i++) { keys.unshift(k); k = prevMonth(k); }
+    const rows = keys.map((month) => {
+      let expectedMinor = 0, receivedMinor = 0, policiesDue = 0, policiesPaid = 0;
+      for (const p of policies) {
+        const start = p.commencementDate.slice(0, 7);
+        const end = p.maturityDate ? p.maturityDate.slice(0, 7) : '9999-12';
+        if (month < start || month > end) continue;
+        const premium = Money.fromMajor(p.monthlyPremium).toMinor();
+        const paid = Money.fromMajor((paymentsByPolicy.get(p.id) ?? {})[month] ?? 0).toMinor();
+        policiesDue++;
+        expectedMinor += premium;
+        receivedMinor += Math.max(paid, 0);
+        if (paid >= premium) policiesPaid++;
+      }
+      const overdueFrom = premiumOverdueFrom(month, rules, true);
+      const receiptDate = new Date(overdueFrom.getFullYear(), overdueFrom.getMonth(), overdueFrom.getDate() - 1);
+      const dueBy = `${receiptDate.getFullYear()}-${String(receiptDate.getMonth() + 1).padStart(2, '0')}-${String(receiptDate.getDate()).padStart(2, '0')}`;
+      const state = expectedMinor > 0 && receivedMinor >= expectedMinor * 0.95 ? 'Received'
+        : receivedMinor > 0 ? 'Partly received'
+        : overdueFrom > now ? 'Not due yet' : 'Overdue';
+      return {
+        month,
+        dueBy,
+        state: expectedMinor === 0 ? 'No payroll policies' : state,
+        policiesDue,
+        policiesPaid,
+        expected: Money.fromMinor(expectedMinor).toMajor(),
+        received: Money.fromMinor(receivedMinor).toMajor(),
+        shortfall: Money.fromMinor(Math.max(expectedMinor - receivedMinor, 0)).toMajor(),
+        collectionRate: expectedMinor ? receivedMinor / expectedMinor : 0,
+      };
+    });
+    return { payrollReceiptDay: rules.payrollReceiptDay, payrollPolicies: policies.length, months: rows.reverse() };
   }
 
   /** A photo/scan of the physical, signed application form - same pattern as ClientsService.uploadPhoto. */
@@ -262,7 +315,7 @@ export class PoliciesService {
     policyId: string,
     notes: string,
     actor: AuthenticatedUser,
-    rules: { premiumDueDay: number; warningThresholdMonths: number; lapseThresholdMonths: number },
+    rules: BusinessRules,
     paymentsByMonth: Record<string, number>,
     reportingMonth: string,
   ): Promise<PolicyEntity> {
@@ -276,6 +329,7 @@ export class PoliciesService {
         maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
         monthlyPremiumMinor: Math.round(Number(policy.monthlyPremium) * 100),
         paymentsByMonth,
+        payrollDeduction: isPayrollDeductionPolicy(policy),
       },
       reportingMonth,
       rules,

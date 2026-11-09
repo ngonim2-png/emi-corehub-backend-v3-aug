@@ -45,6 +45,8 @@ async function bootstrap() {
             res.setHeader('Cache-Control', 'public, max-age=86400');
           }
           if (base === 'sw.js') res.setHeader('Service-Worker-Allowed', '/app/');
+          // Lets the company website show the app's images (screenshot, QR code, logo).
+          if (filePath.includes(`${path.sep}img${path.sep}`)) res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
         },
       }),
     );

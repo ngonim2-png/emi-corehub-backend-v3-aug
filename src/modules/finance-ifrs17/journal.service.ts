@@ -165,6 +165,23 @@ export class JournalService {
     return reversal;
   }
 
+  /**
+   * Reverses every automatically posted entry that came from one source
+   * record (for example all entries for a payment that has now been
+   * reversed). Entries already reversed are skipped, so this is safe to
+   * run twice. Returns the number of entries reversed.
+   */
+  async reverseBySource(sourceModule: string, sourceRef: string, narration: string, actor: AuthenticatedUser | null): Promise<number> {
+    const entries = await this.journalRepo.find({ where: { sourceModule, sourceRef, status: 'Posted' as any, reversalStatus: 'None' as any } });
+    for (const e of entries) await this.reverse(e.id, `${narration} (${e.entryNo})`, actor as AuthenticatedUser);
+    return entries.length;
+  }
+
+  /** True when a chart-of-accounts code exists. */
+  async accountExists(code: string): Promise<boolean> {
+    return (await this.accountsRepo.count({ where: { code } })) > 0;
+  }
+
   async closePeriod(period: string, actor: AuthenticatedUser, notes?: string): Promise<AccountingPeriodEntity> {
     const existing = await this.periodsRepo.findOne({ where: { period } });
     if (existing) throw new BadRequestException(`${period} is already closed.`);

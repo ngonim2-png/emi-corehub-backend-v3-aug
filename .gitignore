@@ -4,7 +4,3 @@ dist/
 .env.production
 *.log
 .DS_Store
-
-dump.rdb
-corehub_V3/
-emi-backend/

@@ -304,9 +304,11 @@ export class PaymentsService {
    * by @Roles on the controller.
    */
   async reverse(paymentId: string, actor: AuthenticatedUser): Promise<PaymentEntity> {
-    const original = await this.paymentsRepo.findOneOrFail({ where: { id: paymentId } });
+    // Load the policy too: the reversal row must point at the same policy, or the reversed money would still count as paid.
+    const original = await this.paymentsRepo.findOneOrFail({ where: { id: paymentId }, relations: ['policy'] });
 
-    return this.dataSource.transaction(async (manager) => {
+    if (original.reversalStatus === 'Reversed') throw new BadRequestException('This payment has already been reversed.');
+    const saved = await this.dataSource.transaction(async (manager) => {
       await manager.update(PaymentEntity, paymentId, { reversalStatus: 'Reversed' });
 
       const reversal = manager.create(PaymentEntity, {
@@ -321,5 +323,8 @@ export class PaymentsService {
       });
       return manager.save(PaymentEntity, reversal);
     });
+    // Finance reverses the journal entries this payment created, so the books match the payment register.
+    this.eventEmitter.emit(DomainEvents.PaymentReversed, { paymentId: original.id, receiptNo: original.receiptNo, actor });
+    return saved;
   }
 }

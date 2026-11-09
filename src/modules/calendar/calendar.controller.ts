@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Post, Query } from '@nestjs/common';
 import { AuditLog } from '../../common/decorators/audit-log.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { CalendarService, CreateCalendarEventInput } from './calendar.service';
@@ -16,7 +16,9 @@ export class CalendarController {
   /** Month-grid view: pass the first and last instant of the visible range. */
   @Get()
   async findInRange(@Query('from') from: string, @Query('to') to: string) {
-    return this.calendarService.findInRange(new Date(from), new Date(to));
+    const start = new Date(from), end = new Date(to);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) throw new BadRequestException('Give a valid "from" and "to" date.');
+    return this.calendarService.findInRange(start, end);
   }
 
   /** My Tasks integration - this user's own upcoming/overdue events. */

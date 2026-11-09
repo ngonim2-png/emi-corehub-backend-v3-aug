@@ -4,7 +4,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { SlicomMonthlyService } from './slicom-monthly.service';
 
 @Controller('reports/slicom-monthly')
-@Roles('Super Admin', 'Finance Manager')
+@Roles('Super Admin', 'Finance Manager', 'Finance Director')
 export class SlicomMonthlyController {
   constructor(private readonly slicomService: SlicomMonthlyService) {}
 

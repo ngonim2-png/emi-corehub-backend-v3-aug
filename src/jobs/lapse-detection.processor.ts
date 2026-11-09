@@ -4,7 +4,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PoliciesService } from '../modules/clients-policies/policies.service';
 import { PaymentsService } from '../modules/field-collection-wallet/payments.service';
-import { computePolicyStatus, ym, PolicyForStatusCalc } from '../modules/clients-policies/policy-status.util';
+import { computePolicyStatus, ym, PolicyForStatusCalc, businessRulesFromConfig, isPayrollDeductionPolicy } from '../modules/clients-policies/policy-status.util';
 import { Money } from '../common/utils/money.util';
 
 @Processor('jobs')
@@ -24,11 +24,7 @@ export class LapseDetectionProcessor extends WorkerHost {
 
     const now = new Date();
     const reportingMonth = ym(now.getFullYear(), now.getMonth() + 1);
-    const rules = {
-      premiumDueDay: this.config.get<number>('businessRules.premiumDueDay') ?? 5,
-      warningThresholdMonths: this.config.get<number>('businessRules.warningThresholdMonths') ?? 2,
-      lapseThresholdMonths: this.config.get<number>('businessRules.lapseThresholdMonths') ?? 3,
-    };
+    const rules = businessRulesFromConfig(this.config);
 
     const policies = await this.policiesService.findAllForStatusRecompute();
     this.logger.log(`Recomputing status for ${policies.length} policies`);
@@ -48,6 +44,7 @@ export class LapseDetectionProcessor extends WorkerHost {
         maturityMonth,
         monthlyPremiumMinor: Money.fromMajor(policy.monthlyPremium).toMinor(),
         paymentsByMonth,
+        payrollDeduction: isPayrollDeductionPolicy(policy),
       };
 
       const result = computePolicyStatus(input, reportingMonth, rules, now);

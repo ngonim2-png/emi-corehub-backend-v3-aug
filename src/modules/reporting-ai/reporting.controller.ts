@@ -18,7 +18,7 @@ export class RegulatoryReportController {
   constructor(private readonly reportingService: ReportingService) {}
 
   @Get('regulatory-summary')
-  @Roles('Super Admin', 'Finance Manager', 'Internal Auditor')
+  @Roles('Super Admin', 'Finance Manager', 'Finance Director', 'Internal Auditor')
   async regulatorySummary(@Query('period') period: string) {
     if (!period || !/^\d{4}-\d{2}$/.test(period)) {
       throw new BadRequestException('period is required and must be in YYYY-MM format.');

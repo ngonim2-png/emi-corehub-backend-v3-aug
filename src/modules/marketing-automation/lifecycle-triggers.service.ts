@@ -7,7 +7,7 @@ import { PolicyEntity } from '../clients-policies/entities/policy.entity';
 import { ClientEntity } from '../clients-policies/entities/client.entity';
 import { PaymentsService } from '../field-collection-wallet/payments.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { computePolicyStatus } from '../clients-policies/policy-status.util';
+import { computePolicyStatus, businessRulesFromConfig, isPayrollDeductionPolicy } from '../clients-policies/policy-status.util';
 import { Money } from '../../common/utils/money.util';
 import { CreateTriggerDto, UpdateTriggerDto } from './dto/trigger.dto';
 
@@ -65,11 +65,7 @@ export class LifecycleTriggersService {
   }
 
   private async businessRules() {
-    return {
-      premiumDueDay: this.config.get<number>('businessRules.premiumDueDay') ?? 5,
-      warningThresholdMonths: this.config.get<number>('businessRules.warningThresholdMonths') ?? 2,
-      lapseThresholdMonths: this.config.get<number>('businessRules.lapseThresholdMonths') ?? 3,
-    };
+    return businessRulesFromConfig(this.config);
   }
 
   /**
@@ -157,6 +153,7 @@ export class LifecycleTriggersService {
           maturityMonth: policy.maturityDate ? policy.maturityDate.slice(0, 7) : null,
           monthlyPremiumMinor: Money.fromMajor(policy.monthlyPremium).toMinor(),
           paymentsByMonth,
+          payrollDeduction: isPayrollDeductionPolicy(policy),
         },
         reportingMonth,
         rules,
