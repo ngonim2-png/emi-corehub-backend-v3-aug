@@ -137,24 +137,39 @@ export class PoliciesService {
    */
   async payrollCollectionSummary(months = 6, now = new Date()) {
     const rules = businessRulesFromConfig(this.config);
-    const policies = (await this.policiesRepo.find()).filter((p) => p.status !== 'Cancelled' && isPayrollDeductionPolicy(p));
+    const allWithPin = (await this.policiesRepo.find()).filter((p) => isPayrollDeductionPolicy(p));
+    const policies = allWithPin.filter((p) => p.status !== 'Cancelled');
     const paymentsByPolicy = await this.paymentsService.getPaymentsByMonthForPolicies(policies.map((p) => p.id));
+    // AG money is counted on every policy with a pincode, whatever its status or cover dates:
+    // a deduction that arrived is money received, even if the policy's dates need fixing.
+    const split = await this.paymentsService.getPayrollSplitByMonthForPolicies(allWithPin.map((p) => p.id));
     const keys: string[] = [];
     let k = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     for (let i = 0; i < months; i++) { keys.unshift(k); k = prevMonth(k); }
     const rows = keys.map((month) => {
-      let expectedMinor = 0, receivedMinor = 0, policiesDue = 0, policiesPaid = 0;
+      let expectedMinor = 0, policiesDue = 0, policiesPaid = 0, otherMinor = 0;
+      let agMinor = 0, agOutsideMinor = 0, agOutsideCount = 0;
+      for (const p of allWithPin) {
+        const m = (split.get(p.id) ?? {})[month];
+        if (!m) continue;
+        const ag = Money.fromMajor(m.ag).toMinor();
+        agMinor += ag;
+        const start = p.commencementDate.slice(0, 7);
+        const end = p.maturityDate ? p.maturityDate.slice(0, 7) : '9999-12';
+        if (ag > 0 && (p.status === 'Cancelled' || month < start || month > end)) { agOutsideMinor += ag; agOutsideCount++; }
+      }
       for (const p of policies) {
         const start = p.commencementDate.slice(0, 7);
         const end = p.maturityDate ? p.maturityDate.slice(0, 7) : '9999-12';
         if (month < start || month > end) continue;
         const premium = Money.fromMajor(p.monthlyPremium).toMinor();
         const paid = Money.fromMajor((paymentsByPolicy.get(p.id) ?? {})[month] ?? 0).toMinor();
+        otherMinor += Math.max(Money.fromMajor((split.get(p.id) ?? {})[month]?.other ?? 0).toMinor(), 0);
         policiesDue++;
         expectedMinor += premium;
-        receivedMinor += Math.max(paid, 0);
         if (paid >= premium) policiesPaid++;
       }
+      const receivedMinor = Math.max(agMinor, 0) + otherMinor;
       const overdueFrom = premiumOverdueFrom(month, rules, true);
       const receiptDate = new Date(overdueFrom.getFullYear(), overdueFrom.getMonth(), overdueFrom.getDate() - 1);
       const dueBy = `${receiptDate.getFullYear()}-${String(receiptDate.getMonth() + 1).padStart(2, '0')}-${String(receiptDate.getDate()).padStart(2, '0')}`;
@@ -169,6 +184,13 @@ export class PoliciesService {
         policiesPaid,
         expected: Money.fromMinor(expectedMinor).toMajor(),
         received: Money.fromMinor(receivedMinor).toMajor(),
+        /** AG payroll deductions recorded for this month, on every policy with a pincode. */
+        receivedAg: Money.fromMinor(agMinor).toMajor(),
+        /** Cash, mobile money and other payments on these policies for this month. */
+        receivedOther: Money.fromMinor(otherMinor).toMajor(),
+        /** AG money on policies that are cancelled or whose cover dates don't include this month (dates to check). */
+        agOutsideCover: Money.fromMinor(agOutsideMinor).toMajor(),
+        agOutsideCoverPolicies: agOutsideCount,
         shortfall: Money.fromMinor(Math.max(expectedMinor - receivedMinor, 0)).toMajor(),
         collectionRate: expectedMinor ? receivedMinor / expectedMinor : 0,
       };

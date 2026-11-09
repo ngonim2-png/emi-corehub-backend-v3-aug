@@ -87,4 +87,12 @@ export class DeductionImportController {
     );
     sendExcelFile(res, buffer, `ag-not-recorded-${period}.xlsx`);
   }
+
+  /** Recorded AG lines that need a look: reversed payments, amounts that differ, and policies outside their cover dates. */
+  @Get('reconcile')
+  @Roles('Super Admin', 'Finance Manager', 'Finance Director', 'Internal Auditor')
+  async reconcile(@Query('period') period: string) {
+    if (!/^\d{4}-\d{2}$/.test(period || '')) throw new BadRequestException('period must be YYYY-MM');
+    return this.deductionImportService.reconcile(period);
+  }
 }

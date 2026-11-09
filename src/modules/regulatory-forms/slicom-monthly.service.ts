@@ -78,14 +78,34 @@ export class SlicomMonthlyService {
     return layout.footerRow + extra;
   }
 
-  private writeRows(ws: ExcelJS.Worksheet, layout: SheetLayout, rows: (string | number)[][]): void {
-    this.ensureRowCapacity(ws, layout, rows.length);
-    rows.forEach((rowData, i) => {
+  /**
+   * Writes the data rows and, when totalCols is given, a bold TOTAL row
+   * straight after them that adds up those columns (1-based), so the
+   * report states the month's total itself.
+   */
+  private writeRows(ws: ExcelJS.Worksheet, layout: SheetLayout, rows: (string | number)[][], totalCols: number[] = []): void {
+    const all = rows.slice();
+    if (totalCols.length) {
+      const total: (string | number)[] = Array.from({ length: layout.numCols }, () => '');
+      total[0] = `TOTAL (${rows.length} ${rows.length === 1 ? 'entry' : 'entries'})`;
+      for (const c of totalCols) total[c - 1] = Math.round(rows.reduce((t, r) => t + (Number(r[c - 1]) || 0), 0) * 100) / 100;
+      all.push(total);
+    }
+    this.ensureRowCapacity(ws, layout, all.length);
+    all.forEach((rowData, i) => {
       const r = ws.getRow(layout.firstDataRow + i);
       rowData.forEach((val, c) => {
         r.getCell(c + 1).value = val;
       });
     });
+    if (totalCols.length) {
+      const r = ws.getRow(layout.firstDataRow + all.length - 1);
+      for (let c = 1; c <= layout.numCols; c++) {
+        const cell = r.getCell(c);
+        cell.font = { ...(cell.font || {}), bold: true };
+        cell.border = { ...(cell.border || {}), top: { style: 'medium' } };
+      }
+    }
   }
 
   private setTitleAndCompany(ws: ExcelJS.Worksheet, monthLabel: string): void {
@@ -135,6 +155,19 @@ export class SlicomMonthlyService {
       .orderBy('payment.createdAt', 'ASC')
       .getMany();
 
+    // For AG payroll deductions, the institution is the ministry / MDA named in the AG file.
+    const mdaByPayment = new Map<string, string>();
+    const agIds = payments.filter((p) => p.paymentMethod === 'Payroll Deduction').map((p) => p.id);
+    for (let i = 0; i < agIds.length; i += 1000) {
+      const chunk = agIds.slice(i, i + 1000);
+      const recs: { matchedPaymentId: string; mdaName: string }[] = await this.paymentsRepo.query(
+        `SELECT DISTINCT ON ("matchedPaymentId") "matchedPaymentId", "mdaName" FROM "deduction_import_records"
+         WHERE "matchedPaymentId" = ANY($1) AND "mdaName" IS NOT NULL ORDER BY "matchedPaymentId", "createdAt" DESC`,
+        [chunk],
+      );
+      for (const r of recs) mdaByPayment.set(r.matchedPaymentId, r.mdaName);
+    }
+
     const ws1 = this.getRequiredWorksheet(workbook, SHEET1_PREMIUM.sheetName);
     this.setTitleAndCompany(ws1, monthLabel);
     this.writeRows(
@@ -143,12 +176,13 @@ export class SlicomMonthlyService {
       payments.map((p) => [
         p.policy.client.fullName,
         p.policy.policyNo,
-        p.policy.client.employerOrGroup || '',
+        mdaByPayment.get(p.id) || p.policy.client.employerOrGroup || '',
         p.paymentMethod,
         this.marketerName(p.marketerId, marketerNames),
         Number(p.amount),
-        '',
+        p.paymentMethod === 'Payroll Deduction' && p.policy.payrollPinCode ? `AG pincode ${p.policy.payrollPinCode}` : '',
       ]),
+      [6],
     );
 
     // ---------- Sheet2: Claims Outstanding ----------
@@ -185,6 +219,7 @@ export class SlicomMonthlyService {
         '',
         '',
       ]),
+      [5, 6],
     );
 
     // ---------- Sheet3: Claims Paid ----------
@@ -213,6 +248,7 @@ export class SlicomMonthlyService {
         c.paymentMethod ?? '',
         '',
       ]),
+      [5],
     );
 
     const arrayBuffer = await workbook.xlsx.writeBuffer();

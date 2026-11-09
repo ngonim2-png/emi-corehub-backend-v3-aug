@@ -5,6 +5,8 @@ import * as XLSX from 'xlsx';
 import { randomUUID } from 'crypto';
 import { DeductionImportRecordEntity, DeductionRecordStatus } from './entities/deduction-import-record.entity';
 import { PolicyEntity } from '../clients-policies/entities/policy.entity';
+import { PaymentEntity } from '../field-collection-wallet/entities/payment.entity';
+import { In } from 'typeorm';
 import { PaymentsService } from '../field-collection-wallet/payments.service';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
@@ -207,6 +209,7 @@ export class DeductionImportService {
   constructor(
     @InjectRepository(DeductionImportRecordEntity) private readonly recordsRepo: Repository<DeductionImportRecordEntity>,
     @InjectRepository(PolicyEntity) private readonly policiesRepo: Repository<PolicyEntity>,
+    @InjectRepository(PaymentEntity) private readonly paymentsRepo: Repository<PaymentEntity>,
     private readonly paymentsService: PaymentsService,
   ) {}
 
@@ -311,43 +314,100 @@ export class DeductionImportService {
   }
 
   /**
-   * What the latest AG upload for each month contained, next to what was
-   * recorded: the file's own total, and the lines that could not be
-   * recorded (no policy with that pincode, or the policy is cancelled).
+   * The lines that make up a month's AG deductions: the latest upload of
+   * each file for that month (the AG report may come as one file or as
+   * several, e.g. one per ministry). Re-uploading a file replaces its
+   * earlier upload in these totals, it never adds to them.
    */
+  private async currentRecords(period: string): Promise<DeductionImportRecordEntity[]> {
+    const batches: { importBatch: string }[] = await this.recordsRepo.query(
+      `SELECT DISTINCT ON ("sourceFileName") "importBatch" FROM "deduction_import_records"
+       WHERE "period" = $1 AND "importBatch" IS NOT NULL ORDER BY "sourceFileName", "createdAt" DESC`,
+      [period],
+    );
+    if (!batches.length) return [];
+    return this.recordsRepo.find({ where: { period, importBatch: In(batches.map((b) => b.importBatch)) } });
+  }
+
+  /** What the AG files for each month contained, next to what was recorded. */
   async fileSummaryForPeriods(periods: string[]) {
-    const out: Record<string, { fileName: string; uploadedAt: Date; lines: number; total: number; recorded: number; recordedLines: number; unmatched: number; unmatchedLines: number; cancelled: number; cancelledLines: number; zeroLines: number } | null> = {};
+    const out: Record<string, any> = {};
     for (const period of periods) {
-      const latest = await this.recordsRepo.createQueryBuilder('r')
-        .where('r.period = :period', { period }).andWhere('r.importBatch IS NOT NULL')
-        .orderBy('r.createdAt', 'DESC').limit(1).getOne();
-      if (!latest) { out[period] = null; continue; }
-      const recs = await this.recordsRepo.find({ where: { period, importBatch: latest.importBatch as string } });
+      const recs = await this.currentRecords(period);
+      if (!recs.length) { out[period] = null; continue; }
       const sum = (st: string[]) => recs.filter((r) => st.includes(r.status)).reduce((t, r) => t + Number(r.amount), 0);
       const n = (st: string[]) => recs.filter((r) => st.includes(r.status)).length;
+      const files = [...new Set(recs.map((r) => r.sourceFileName))];
+      const rec = await this.reconcile(period, recs);
       out[period] = {
-        fileName: latest.sourceFileName, uploadedAt: latest.createdAt,
+        fileName: files.join(', '), files: files.length,
+        uploadedAt: recs.reduce((d, r) => (r.createdAt > d ? r.createdAt : d), recs[0].createdAt),
         lines: recs.length, total: recs.reduce((t, r) => t + Number(r.amount), 0),
         recorded: sum(['Posted', 'AlreadyPosted']), recordedLines: n(['Posted', 'AlreadyPosted']),
         unmatched: sum(['Unmatched']), unmatchedLines: n(['Unmatched']),
         cancelled: sum(['PolicyCancelled']), cancelledLines: n(['PolicyCancelled']),
         zeroLines: n(['Zero']),
+        reversed: rec.totals.reversed, reversedLines: rec.totals.reversedLines,
+        amountDiffers: rec.totals.amountDiffers, amountDiffersLines: rec.totals.amountDiffersLines,
+        outsideCover: rec.totals.outsideCover, outsideCoverLines: rec.totals.outsideCoverLines,
       };
     }
     return out;
   }
 
-  /** The AG lines from the latest upload for a month that could not be recorded. */
+  /** The AG lines for a month that could not be recorded. */
   async notRecordedLines(period: string) {
-    const latest = await this.recordsRepo.createQueryBuilder('r')
-      .where('r.period = :period', { period }).andWhere('r.importBatch IS NOT NULL')
-      .orderBy('r.createdAt', 'DESC').limit(1).getOne();
-    if (!latest) return [];
-    const recs = await this.recordsRepo.find({ where: { period, importBatch: latest.importBatch as string } });
+    const recs = await this.currentRecords(period);
     return recs
       .filter((r) => r.status === 'Unmatched' || r.status === 'PolicyCancelled')
       .map((r) => ({ pincode: r.pincode, employeeName: r.employeeName, mdaName: r.mdaName ?? '', amount: Number(r.amount), reason: r.status === 'Unmatched' ? 'No policy with this pincode' : 'Policy is cancelled' }))
       .sort((x, y) => x.employeeName.localeCompare(y.employeeName));
+  }
+
+  /**
+   * Recorded AG lines that need a look:
+   * - Payment reversed: it was posted, then reversed, so it no longer counts as received.
+   * - Amount differs: the payment already in CoreHub (e.g. from an earlier upload)
+   *   is for a different amount than this line of the file.
+   * - Outside cover dates: counted as received, but the policy is cancelled, or its
+   *   start date is after this month, or it matured before it. Usually a date to fix.
+   */
+  async reconcile(period: string, recsIn?: DeductionImportRecordEntity[]) {
+    const recs = (recsIn ?? (await this.currentRecords(period))).filter((r) => (r.status === 'Posted' || r.status === 'AlreadyPosted') && r.matchedPaymentId);
+    const ids = [...new Set(recs.map((r) => r.matchedPaymentId as string))];
+    const payments = ids.length ? await this.paymentsRepo.find({ where: { id: In(ids) }, relations: ['policy', 'policy.client'] }) : [];
+    const byId = new Map(payments.map((p) => [p.id, p]));
+    const rows: any[] = [];
+    const totals = { reversed: 0, reversedLines: 0, amountDiffers: 0, amountDiffersLines: 0, outsideCover: 0, outsideCoverLines: 0 };
+    for (const r of recs) {
+      const pay = byId.get(r.matchedPaymentId as string);
+      const line = Number(r.amount);
+      const pol: any = pay?.policy;
+      const base = { employeeName: r.employeeName, pincode: r.pincode, mdaName: r.mdaName ?? '', lineAmount: line, policyNo: pol?.policyNo ?? '', clientId: pol?.client?.id ?? null, clientName: pol?.client?.fullName ?? '', paymentAmount: pay ? Number(pay.amount) : 0 };
+      if (!pay || pay.reversalStatus === 'Reversed') {
+        totals.reversed += line; totals.reversedLines++;
+        rows.push({ ...base, issue: 'Payment reversed', difference: line });
+        continue;
+      }
+      const diff = Math.round((line - Number(pay.amount)) * 100) / 100;
+      if (diff !== 0) {
+        totals.amountDiffers += diff; totals.amountDiffersLines++;
+        rows.push({ ...base, issue: `Recorded as NLe ${Number(pay.amount).toLocaleString('en-GB')}, file says NLe ${line.toLocaleString('en-GB')}`, difference: diff });
+      }
+      if (pol) {
+        const start = String(pol.commencementDate || '').slice(0, 7);
+        const end = pol.maturityDate ? String(pol.maturityDate).slice(0, 7) : '9999-12';
+        const why = pol.status === 'Cancelled' ? 'Policy is cancelled'
+          : period < start ? `Deducted before the policy start date (${pol.commencementDate})`
+          : period > end ? `Deducted after the policy matured (${pol.maturityDate})` : '';
+        if (why) {
+          totals.outsideCover += Number(pay.amount); totals.outsideCoverLines++;
+          rows.push({ ...base, issue: why, difference: 0 });
+        }
+      }
+    }
+    rows.sort((x, y) => x.employeeName.localeCompare(y.employeeName));
+    return { totals, rows };
   }
 
   async importDeductions(

@@ -279,6 +279,31 @@ export class PaymentsService {
    * timeout, even though the database itself was healthy the whole
    * time.
    */
+  /**
+   * Per policy and month: money that came in as AG payroll deduction vs any
+   * other way (cash, mobile money...). Reversals are included as negative
+   * rows, so these are net amounts.
+   */
+  async getPayrollSplitByMonthForPolicies(policyIds: string[]): Promise<Map<string, Record<string, { ag: number; other: number }>>> {
+    const result = new Map<string, Record<string, { ag: number; other: number }>>();
+    if (policyIds.length === 0) return result;
+    const rows: { policyId: string; paymentMonth: string; ag: string; other: string }[] = await this.paymentsRepo
+      .createQueryBuilder('payment')
+      .select('payment.policyId', 'policyId')
+      .addSelect('payment.paymentMonth', 'paymentMonth')
+      .addSelect(`COALESCE(SUM(CASE WHEN payment.paymentMethod = 'Payroll Deduction' THEN payment.amount ELSE 0 END), 0)`, 'ag')
+      .addSelect(`COALESCE(SUM(CASE WHEN payment.paymentMethod <> 'Payroll Deduction' THEN payment.amount ELSE 0 END), 0)`, 'other')
+      .where('payment.policyId IN (:...policyIds)', { policyIds })
+      .groupBy('payment.policyId')
+      .addGroupBy('payment.paymentMonth')
+      .getRawMany();
+    for (const row of rows) {
+      if (!result.has(row.policyId)) result.set(row.policyId, {});
+      result.get(row.policyId)![row.paymentMonth] = { ag: Number(row.ag), other: Number(row.other) };
+    }
+    return result;
+  }
+
   async getPaymentsByMonthForPolicies(policyIds: string[]): Promise<Map<string, Record<string, number>>> {
     const result = new Map<string, Record<string, number>>();
     if (policyIds.length === 0) return result;
