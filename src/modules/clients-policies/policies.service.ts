@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Not } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -174,6 +174,48 @@ export class PoliciesService {
       };
     });
     return { payrollReceiptDay: rules.payrollReceiptDay, payrollPolicies: policies.length, months: rows.reverse() };
+  }
+
+  /**
+   * The AG payroll policies behind one month of the payroll summary, so the
+   * dashboard can list exactly who was deducted and who wasn't. Same policy
+   * set and same "paid" test as payrollCollectionSummary: paid means the
+   * full premium for that month is in; anything less is "Part paid" or
+   * "Not paid".
+   */
+  async payrollMonthPolicies(month: string, status: 'paid' | 'unpaid' | 'all' = 'all') {
+    if (!/^\d{4}-\d{2}$/.test(month)) throw new BadRequestException('month must be YYYY-MM');
+    const policies = (await this.policiesRepo.find({ relations: ['client', 'product'] }))
+      .filter((p) => p.status !== 'Cancelled' && isPayrollDeductionPolicy(p));
+    const paymentsByPolicy = await this.paymentsService.getPaymentsByMonthForPolicies(policies.map((p) => p.id));
+    const rows = [];
+    for (const p of policies) {
+      const start = p.commencementDate.slice(0, 7);
+      const end = p.maturityDate ? p.maturityDate.slice(0, 7) : '9999-12';
+      if (month < start || month > end) continue;
+      const byMonth = paymentsByPolicy.get(p.id) ?? {};
+      const premiumMinor = Money.fromMajor(p.monthlyPremium).toMinor();
+      const receivedMinor = Math.max(Money.fromMajor(byMonth[month] ?? 0).toMinor(), 0);
+      const paidMonths = Object.entries(byMonth).filter(([, v]) => Number(v) > 0).map(([m]) => m).sort();
+      const state = receivedMinor >= premiumMinor ? 'Paid' : receivedMinor > 0 ? 'Part paid' : 'Not paid';
+      if (status === 'paid' && state !== 'Paid') continue;
+      if (status === 'unpaid' && state === 'Paid') continue;
+      rows.push({
+        policyId: p.id,
+        policyNo: p.policyNo,
+        clientId: p.client?.id,
+        clientName: p.client?.fullName ?? '',
+        clientPhone: p.client?.phone ?? '',
+        payrollPinCode: p.payrollPinCode,
+        productName: p.product?.name ?? '',
+        monthlyPremium: Number(p.monthlyPremium),
+        received: Money.fromMinor(receivedMinor).toMajor(),
+        state,
+        lastPaidMonth: paidMonths.length ? paidMonths[paidMonths.length - 1] : null,
+      });
+    }
+    rows.sort((a, b) => a.clientName.localeCompare(b.clientName));
+    return rows;
   }
 
   /** A photo/scan of the physical, signed application form - same pattern as ClientsService.uploadPhoto. */

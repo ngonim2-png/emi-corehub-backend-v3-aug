@@ -51,6 +51,36 @@ export class PoliciesController {
     return this.policiesService.payrollCollectionSummary(Math.min(Math.max(parseInt(months ?? '6', 10) || 6, 1), 24));
   }
 
+  /** The policies behind one month of the AG payroll table: status=paid, unpaid (not paid or part paid) or all. */
+  @Get('reports/payroll-collection/:month/policies')
+  async payrollMonthPolicies(@Param('month') month: string, @Query('status') status?: string) {
+    return this.policiesService.payrollMonthPolicies(month, status === 'paid' || status === 'unpaid' ? status : 'all');
+  }
+
+  @Get('reports/payroll-collection/:month/policies/export')
+  async exportPayrollMonthPolicies(@Param('month') month: string, @Query('status') status: string | undefined, @Res() res: Response) {
+    const which = status === 'paid' || status === 'unpaid' ? status : 'all';
+    const rows = await this.policiesService.payrollMonthPolicies(month, which);
+    const label = which === 'paid' ? 'Paid' : which === 'unpaid' ? 'Not paid' : 'All';
+    const buffer = await buildExcelExport(
+      'AG Payroll',
+      [
+        { header: 'Client', key: 'clientName', width: 26 },
+        { header: 'Phone', key: 'clientPhone', width: 16 },
+        { header: 'Policy No', key: 'policyNo', width: 16 },
+        { header: 'AG Pincode', key: 'payrollPinCode', width: 14 },
+        { header: 'Product', key: 'productName', width: 22 },
+        { header: 'Monthly Premium', key: 'monthlyPremium', width: 16, numeric: true },
+        { header: 'Received', key: 'received', width: 14, numeric: true },
+        { header: 'Status', key: 'state', width: 12 },
+        { header: 'Last Month Paid', key: 'lastPaidMonth', width: 16 },
+      ],
+      rows.map((r) => ({ ...r, payrollPinCode: r.payrollPinCode ?? '', lastPaidMonth: r.lastPaidMonth ?? '' })),
+      `AG payroll deductions, ${month}: ${label} (${rows.length})`,
+    );
+    sendExcelFile(res, buffer, `ag-payroll-${month}-${which}.xlsx`);
+  }
+
   @Get('reports/export')
   async exportRegister(@Query('reportingMonth') reportingMonth: string | undefined, @Res() res: Response) {
     const rows = await this.policiesService.computedReport(reportingMonth);
