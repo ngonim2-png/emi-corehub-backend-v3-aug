@@ -2,9 +2,9 @@
    - Caches the app shell so the app opens instantly and works on weak data.
    - NEVER caches API responses (they hold personal data).
    - Receives push notifications. */
-const VERSION = 'emi-app-v6';
+const VERSION = 'emi-app-v7';
 const SHELL = [
-  './', 'index.html', 'styles.css?v=6', 'core.js?v=6', 'ui.js?v=6', 'views-public.js?v=6', 'views-applicant.js?v=6',
+  './', 'index.html', 'styles.css?v=7', 'core.js?v=7', 'ui.js?v=6', 'views-public.js?v=6', 'views-applicant.js?v=6',
   'views-client.js?v=6', 'main.js?v=6', 'manifest.webmanifest', 'img/logo-full.png', 'img/mark-square.png',
   'img/icon-192.png', 'img/badge-96.png'
 ];

@@ -170,8 +170,46 @@
   };
 
   // ---------- install (Android shows a real prompt; iPhone needs Share > Add to Home Screen)
-  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); EMI.state.installEvt = e; });
-  window.addEventListener('appinstalled', function () { EMI.state.installEvt = null; if (EMI.toast) EMI.toast('App installed'); });
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); EMI.state.installEvt = e; setTimeout(EMI.showInstallBanner, 1500); });
+  window.addEventListener('appinstalled', function () { EMI.state.installEvt = null; EMI.hideInstallBanner(); if (EMI.toast) EMI.toast('App installed'); });
+
+  // ---------- install banner: shown on any screen the first time someone opens the app in a browser (for example from the QR code)
+  var BANNER_KEY = 'emi_install_dismissed';
+  function bannerDismissedRecently() {
+    try { var t = Number(localStorage.getItem(BANNER_KEY) || 0); return t && (Date.now() - t) < 3 * 24 * 3600 * 1000; } catch (_) { return false; }
+  }
+  EMI.hideInstallBanner = function () {
+    var b = document.getElementById('installBanner');
+    if (b && b.parentNode) b.parentNode.removeChild(b);
+  };
+  EMI.showInstallBanner = function () {
+    if (document.getElementById('installBanner')) return;
+    if (EMI.isStandalone() || bannerDismissedRecently()) return;
+    var canPrompt = !!EMI.state.installEvt, ios = EMI.isIos();
+    if (!canPrompt && !ios) return;
+    var b = document.createElement('div');
+    b.id = 'installBanner'; b.className = 'installbar'; b.setAttribute('role', 'region'); b.setAttribute('aria-label', 'Install the app');
+    var img = document.createElement('img'); img.src = 'img/icon-192.png'; img.alt = ''; img.width = 44; img.height = 44; img.className = 'installbar__icon';
+    var txt = document.createElement('div'); txt.className = 'installbar__text';
+    var t1 = document.createElement('strong'); t1.textContent = 'Get the Enhanced Mutual app';
+    var t2 = document.createElement('span');
+    t2.textContent = canPrompt ? 'Add it to your home screen. It opens like any other app.' : 'Tap the Share button, then Add to Home Screen.';
+    txt.appendChild(t1); txt.appendChild(t2);
+    var actions = document.createElement('div'); actions.className = 'installbar__actions';
+    if (canPrompt) {
+      var go = document.createElement('button'); go.type = 'button'; go.className = 'installbar__go'; go.textContent = 'Install';
+      go.addEventListener('click', function () { EMI.hideInstallBanner(); EMI.actions.install(); });
+      actions.appendChild(go);
+    }
+    var x = document.createElement('button'); x.type = 'button'; x.className = 'installbar__close'; x.setAttribute('aria-label', canPrompt ? 'Not now' : 'Got it');
+    x.textContent = canPrompt ? 'Not now' : 'Got it';
+    x.addEventListener('click', function () { try { localStorage.setItem(BANNER_KEY, String(Date.now())); } catch (_) {} EMI.hideInstallBanner(); });
+    actions.appendChild(x);
+    b.appendChild(img); b.appendChild(txt); b.appendChild(actions);
+    document.body.appendChild(b);
+  };
+  // iPhone never fires an install event, so offer the Share steps shortly after the app opens.
+  window.addEventListener('load', function () { if (EMI.isIos()) setTimeout(EMI.showInstallBanner, 2500); });
   EMI.actions.install = function () {
     var e = EMI.state.installEvt;
     if (!e) return;
