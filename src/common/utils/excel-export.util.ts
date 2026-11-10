@@ -1,6 +1,6 @@
 import * as ExcelJS from 'exceljs';
 
-const NAVY = 'FF0B0827';
+const NAVY = 'FF10213F';
 const WHITE_TEXT = 'FFFFFFFF';
 
 export interface ExcelColumn {

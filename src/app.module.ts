@@ -41,6 +41,7 @@ import { PolicyDocumentsModule } from './modules/policy-documents/policy-documen
 import { RosterImportModule } from './modules/roster-import/roster-import.module';
 import { DeductionImportModule } from './modules/deduction-import/deduction-import.module';
 import { JobsModule } from './jobs/jobs.module';
+import { RequisitionsModule } from './modules/requisitions/requisitions.module';
 
 @Module({
   imports: [
@@ -140,6 +141,7 @@ import { JobsModule } from './jobs/jobs.module';
     CalendarModule,
     LeadershipModule,
     LoansModule,
+    RequisitionsModule,
     ClientAppModule,
     PolicyDocumentsModule,
     RosterImportModule,

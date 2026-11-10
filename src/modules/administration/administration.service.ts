@@ -100,13 +100,9 @@ export class AdministrationService {
     return { posted: true, totalDepreciation: rounded, assetCount: updates.length };
   }
 
-  async createProcurementRequest(dto: CreateProcurementRequestDto): Promise<ProcurementRequestEntity> {
-    return this.procurementRepo.save(
-      this.procurementRepo.create({
-        item: dto.item, quantity: dto.quantity, requestedBy: dto.requestedBy,
-        unitCost: (dto.unitCost ?? 0).toFixed(2), status: 'Pending Approval',
-      }),
-    );
+  /** Replaced by Office requisitions, which carries the full approval chain. Existing requests can still be approved and paid. */
+  async createProcurementRequest(_dto: CreateProcurementRequestDto): Promise<ProcurementRequestEntity> {
+    throw new BadRequestException('New requests are raised in Office requisitions.');
   }
 
   /**

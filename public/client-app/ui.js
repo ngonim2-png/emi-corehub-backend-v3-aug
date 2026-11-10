@@ -190,7 +190,7 @@
   var STATUS = {
     policy: { 'Active': ['success'], 'One Month Outstanding': ['warning', '1 month due'], 'Warning': ['warning', 'Overdue'], 'Lapsed': ['danger'], 'Matured': ['info'], 'Not Yet Commenced': ['neutral', 'Not started'], 'Cancelled': ['neutral'], 'Surrendered': ['neutral'] },
     claim: { 'Registered': ['info', 'Received'], 'Under Review': ['info'], 'Approved': ['success'], 'Paid': ['success'], 'Rejected': ['danger', 'Not approved'] },
-    loan: { 'Pending Life Manager Approval': ['warning', 'Waiting for approval'], 'Pending Finance Director Approval': ['warning', 'Final approval pending'], 'Approved': ['success'], 'Disbursed': ['success'], 'Completed': ['success'], 'Rejected': ['danger', 'Not approved'] },
+    loan: { 'Pending Life Manager Approval': ['warning', 'Waiting for approval'], 'Pending Finance Director Approval': ['warning', 'Final approval pending'], 'Approved': ['success'], 'Disbursed': ['success', 'Being repaid'], 'Completed': ['success', 'Repaid'], 'Rejected': ['danger', 'Not approved'], 'Deferred': ['warning', 'On hold'] },
     repayment: { 'Paid': ['success'], 'Partial': ['warning', 'Part paid'], 'Due': ['neutral'], 'Overdue': ['danger'] },
     request: { 'Open': ['warning', 'Waiting'], 'Handled': ['success', 'Answered'] },
     application: { 'Received': ['neutral'], 'Under review': ['info'], 'Approved - awaiting first premium': ['warning', 'Approved - pay first premium'], 'Active': ['success'], 'Not approved': ['danger'] }

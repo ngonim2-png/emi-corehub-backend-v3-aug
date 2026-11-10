@@ -12,6 +12,7 @@ import { PaymentEntity } from '../field-collection-wallet/entities/payment.entit
 import { PaymentsService } from '../field-collection-wallet/payments.service';
 import { ClaimsService } from '../claims/claims.service';
 import { LoansService } from '../loans/loans.service';
+import { LoanRequestDto } from './dto/app.dto';
 import { computePolicyStatus, businessRulesFromConfig, isPayrollDeductionPolicy, policyMaturityMonth } from '../clients-policies/policy-status.util';
 import { Money } from '../../common/utils/money.util';
 import { AppFileEntity } from './entities/app-file.entity';
@@ -120,6 +121,8 @@ export class AppClientService {
       client: {
         fullName: client.fullName, clientNo: client.clientNo, phone: client.phone, altPhone: client.altPhone,
         address: client.address, district: client.district, status: client.status, referralCode: client.referralCode,
+        occupation: client.occupation || null, nationalId: client.nationalId || null,
+        payrollPinCode: policies.map((p) => p.payrollPinCode).find((v) => v && String(v).trim()) ?? null,
       },
       policies: policyViews,
       beneficiaries: beneficiaries.map((b) => ({ name: b.name, relationship: b.relationship, sharePct: Number(b.sharePct), phone: b.phone })),
@@ -214,24 +217,45 @@ export class AppClientService {
         ? await this.repaymentsRepo.find({ where: { loan: { id: l.id } }, order: { dueMonth: 'ASC' } })
         : [];
       out.push({
-        id: l.id, loanType: l.loanType, applianceDescription: l.applianceDescription,
+        id: l.id, loanRef: l.loanRef, purpose: l.purpose, purposeDetail: l.purposeDetail,
+        loanType: l.loanType, applianceDescription: l.applianceDescription,
         principal: Number(l.principal), tenureMonths: l.tenureMonths, interestRatePct: Number(l.interestRatePct),
         totalInterest: Number(l.totalInterest), totalRepayable: Number(l.totalRepayable), monthlyPayment: Number(l.monthlyPayment),
         status: l.status, requestedAt: l.requestedAt, disbursedAt: l.disbursedAt,
+        requestedPrincipal: l.requestedPrincipal != null ? Number(l.requestedPrincipal) : Number(l.principal),
+        decisionOutcome: l.decisionOutcome, conditions: l.conditions,
+        // What the client is told: why it is on hold or declined.
+        decisionNote: l.status === 'Deferred' || l.status === 'Rejected' ? (l.financeDirectorNotes || l.lifeManagerNotes || null) : null,
         repayments: repayments.map((r) => ({ dueMonth: r.dueMonth, amountDue: Number(r.amountDue), amountPaid: Number(r.amountPaid), status: r.status })),
       });
     }
     return out;
   }
 
-  async requestLoan(clientId: string, body: { loanType: 'Cash' | 'Appliance'; applianceDescription?: string; principal: number; tenureMonths: number }) {
+  async requestLoan(clientId: string, body: LoanRequestDto, files: Record<string, UploadedAppFile[]> = {}) {
+    const kinds: Record<string, string> = { idCopy: 'identification', salarySlip: 'salarySlips', photo: 'photographs', addressProof: 'addressProof' };
+    const all = Object.entries(files).flatMap(([field, list]) => (list || []).map((file) => ({ kind: kinds[field] ?? 'other', file })));
+    this.validateFiles(all.map((a) => a.file), 8);
     const loan = await this.loansService.create(
-      { clientId, loanType: body.loanType, applianceDescription: body.applianceDescription, principal: Number(body.principal), tenureMonths: Number(body.tenureMonths) },
+      {
+        clientId, loanType: body.loanType, applianceDescription: body.applianceDescription,
+        principal: Number(body.principal), tenureMonths: Number(body.tenureMonths),
+        purpose: body.purpose, purposeDetail: body.purposeDetail,
+        occupation: body.occupation, staffPinCode: body.staffPinCode,
+        monthlyIncome: body.monthlyIncome != null ? Number(body.monthlyIncome) : undefined,
+        existingMonthlyDebt: body.existingMonthlyDebt != null ? Number(body.existingMonthlyDebt) : undefined,
+        idType: body.idType, idNumber: body.idNumber, idExpiry: body.idExpiry || undefined,
+        declarationName: body.declarationName,
+      },
       { id: clientId } as any,
       'Client App',
     );
-    await this.push.notify('client', clientId, 'Loan request received', 'Your loan request has been received and is waiting for approval. We will notify you of every decision.');
-    return { id: loan.id, status: loan.status, monthlyPayment: Number(loan.monthlyPayment), totalRepayable: Number(loan.totalRepayable) };
+    // The online form and its declaration stand in for the paper application form.
+    await this.loansService.updateApplication(loan.id, { checklist: { applicationForm: true } }, { id: clientId } as any);
+    // Documents from the client are kept but not ticked: staff check them first.
+    if (all.length) await this.loansService.addDocuments(loan.id, all, false);
+    await this.push.notify('client', clientId, 'Loan request received', `Your loan request ${loan.loanRef ?? ''} has been received and is waiting for approval. We will notify you of every decision.`.replace('  ', ' '));
+    return { id: loan.id, loanRef: loan.loanRef, status: loan.status, monthlyPayment: Number(loan.monthlyPayment), totalRepayable: Number(loan.totalRepayable), documents: all.length };
   }
 
   // ---------------------------------------------------------------- requests

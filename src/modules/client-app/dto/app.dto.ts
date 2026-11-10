@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, MaxLength, Min, Max, IsBoolean, IsArray, ValidateNested } from 'class-validator';
+import { IsIn, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, MaxLength, Min, Max, IsBoolean, IsArray, ValidateNested, IsDateString } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ActivateStartDto {
@@ -43,8 +43,19 @@ export class ChangePinDto {
 export class LoanRequestDto {
   @IsIn(['Cash', 'Appliance']) loanType: 'Cash' | 'Appliance';
   @IsOptional() @IsString() @MaxLength(300) applianceDescription?: string;
-  @IsNumber() @Min(1) principal: number;
-  @IsNumber() @Min(1) @Max(12) tenureMonths: number;
+  @Type(() => Number) @IsNumber() @Min(1) principal: number;
+  @Type(() => Number) @IsNumber() @Min(1) @Max(60) tenureMonths: number;
+  @IsOptional() @IsIn(['Commercial / Income Generation', 'Personal Use', 'Other']) purpose?: 'Commercial / Income Generation' | 'Personal Use' | 'Other';
+  @IsOptional() @IsString() @MaxLength(500) purposeDetail?: string;
+  @IsOptional() @IsString() @MaxLength(150) occupation?: string;
+  @IsOptional() @IsString() @MaxLength(50) staffPinCode?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) monthlyIncome?: number;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) existingMonthlyDebt?: number;
+  @IsOptional() @IsIn(['National ID Card', "Driver's Licence", 'Passport', 'Voter ID', 'Other approved identification']) idType?: string;
+  @IsOptional() @IsString() @MaxLength(60) idNumber?: string;
+  @IsOptional() @IsDateString() idExpiry?: string;
+  /** Full name typed to accept the declaration. Required for requests from the app. */
+  @IsString() @Length(3, 150) declarationName: string;
 }
 
 export class RequestDto {

@@ -36,6 +36,23 @@ export default () => ({
   finance: {
     // Chart-of-accounts code used to carry AG payroll premiums between the month earned and the month received.
     payrollReceivableAccount: process.env.PAYROLL_RECEIVABLE_ACCOUNT ?? '1100',
+    // Accounts used for client loans.
+    loanReceivableAccount: process.env.LOAN_RECEIVABLE_ACCOUNT ?? '1400',
+    loanUnearnedInterestAccount: process.env.LOAN_UNEARNED_INTEREST_ACCOUNT ?? '2500',
+    loanInterestIncomeAccount: process.env.LOAN_INTEREST_INCOME_ACCOUNT ?? '4200',
+    loanPayoutAccount: process.env.LOAN_PAYOUT_ACCOUNT ?? '1010',
+  },
+  loans: {
+    // Flat interest on the amount borrowed, whatever the tenure.
+    interestRatePct: parseFloat(process.env.LOAN_INTEREST_RATE_PCT ?? '25'),
+    // Tenures a client can choose, in months (the paper form offers 6 or 12).
+    tenureOptions: (process.env.LOAN_TENURE_OPTIONS ?? '6,12').split(',').map((v) => parseInt(v.trim(), 10)).filter((n) => n > 0 && n <= 60),
+    // Distinct months of premium that must be on record before a loan request is accepted.
+    minMonthsPaid: parseInt(process.env.LOAN_MIN_MONTHS_PAID ?? '3', 10),
+    // Debt-to-income above this is flagged on the assessment (not blocked).
+    maxDtiPct: parseFloat(process.env.LOAN_MAX_DTI_PCT ?? '40'),
+    // Every checklist document must be ticked before the Finance Director can approve.
+    requireChecklist: (process.env.LOAN_REQUIRE_CHECKLIST ?? 'true').toLowerCase() !== 'false',
   },
   sms: {
     provider: process.env.SMS_PROVIDER ?? 'alemobet',

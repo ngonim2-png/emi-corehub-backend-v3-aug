@@ -18,6 +18,8 @@ export enum DomainEvents {
   ClaimPaid = 'claim.paid',
   ClaimStatusChanged = 'claim.status_changed',
   LoanStatusChanged = 'loan.status_changed',
+  LoanDisbursed = 'loan.disbursed',
+  LoanRepaymentRecorded = 'loan.repayment_recorded',
   ComplaintLogged = 'complaint.logged',
   JournalPosted = 'journal.posted',
   PeriodClosed = 'period.closed',
@@ -65,7 +67,33 @@ export interface ClaimStatusChangedEvent {
 
 export interface LoanStatusChangedEvent {
   loanId: string;
+  loanRef?: string | null;
   clientId: string;
   status: string;
   amountMajor: number;
+  /** Reason, missing information or conditions to pass on to the client. */
+  notes?: string | null;
+}
+
+export interface LoanDisbursedEvent {
+  loanId: string;
+  loanRef: string;
+  clientName: string;
+  principal: number;
+  totalInterest: number;
+  totalRepayable: number;
+  date: string; // YYYY-MM-DD
+}
+
+export interface LoanRepaymentRecordedEvent {
+  loanId: string;
+  loanRef: string;
+  repaymentId: string;
+  clientName: string;
+  dueMonth: string;
+  amount: number;
+  /** Share of the amount that is interest (amount x totalInterest / totalRepayable). */
+  interestPortion: number;
+  paymentMethod: string;
+  date: string;
 }

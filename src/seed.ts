@@ -29,6 +29,9 @@ const ROLES = [
   'Internal Auditor',
   'Life Manager',
   'Finance Director',
+  'Procurement Manager',
+  'Managing Director',
+  'CEO',
 ];
 
 const PRODUCTS = [

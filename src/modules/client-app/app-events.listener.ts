@@ -14,10 +14,13 @@ const CLAIM_TEXT: Record<string, string> = {
   Rejected: 'could not be approved. Please contact the office',
 };
 const LOAN_TEXT: Record<string, string> = {
+  'Pending Life Manager Approval': 'is back under review',
   'Pending Finance Director Approval': 'passed the first approval and is waiting for final approval',
-  Approved: 'is fully approved and will be disbursed shortly',
-  Disbursed: 'has been disbursed',
-  Rejected: 'was not approved. Please contact the office',
+  Approved: 'is fully approved and will be paid out shortly',
+  Disbursed: 'has been paid out. Your repayment schedule is in the app',
+  Completed: 'is fully repaid. Thank you',
+  Deferred: 'is on hold until we have more information',
+  Rejected: 'was not approved',
 };
 
 function monthLabel(key: string): string {
@@ -74,7 +77,11 @@ export class AppEventsListener {
   async onLoan(e: LoanStatusChangedEvent) {
     try {
       const text = LOAN_TEXT[e.status];
-      if (text && e.clientId) await this.push.notify('client', e.clientId, 'Loan update', `Your loan of NLe ${e.amountMajor.toFixed(2)} ${text}.`);
+      const ref = e.loanRef ? ` ${e.loanRef}` : '';
+      const extra = e.notes && ['Deferred', 'Rejected', 'Approved'].includes(e.status)
+        ? ` ${e.status === 'Approved' ? 'Conditions' : e.status === 'Deferred' ? 'Needed' : 'Reason'}: ${String(e.notes).slice(0, 200)}`
+        : e.status === 'Rejected' ? ' Please contact the office.' : '';
+      if (text && e.clientId) await this.push.notify('client', e.clientId, 'Loan update', `Your loan${ref} of NLe ${e.amountMajor.toFixed(2)} ${text}.${extra}`);
     } catch (err) {
       this.logger.warn(`Loan push failed: ${(err as Error).message}`);
     }

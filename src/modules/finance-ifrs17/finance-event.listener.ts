@@ -2,7 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OnEvent } from '@nestjs/event-emitter';
 import { JournalService } from './journal.service';
-import { PaymentPostedEvent, ClaimStatusEvent, DomainEvents } from '../../common/events/domain-events';
+import { PaymentPostedEvent, ClaimStatusEvent, DomainEvents, LoanDisbursedEvent, LoanRepaymentRecordedEvent } from '../../common/events/domain-events';
+import { LoanJournalService } from './loan-journal.service';
 
 const CASH_ACCOUNT_BY_METHOD: Record<string, string> = {
   'Token Field Collection': '2300',
@@ -20,7 +21,28 @@ export class FinanceEventListener {
   constructor(
     private readonly journalService: JournalService,
     private readonly config: ConfigService,
+    private readonly loanJournals: LoanJournalService,
   ) {}
+
+  // Loan postings never block the loan itself: if one fails (closed month, missing account)
+  // it is logged and "Put loans in the books" on the Loans page catches it up later.
+  @OnEvent(DomainEvents.LoanDisbursed)
+  async onLoanDisbursed(event: LoanDisbursedEvent): Promise<void> {
+    try {
+      await this.loanJournals.postDisbursement(event);
+    } catch (e) {
+      this.logger.error(`Could not post loan ${event.loanRef} payout to the books: ${(e as Error).message}`);
+    }
+  }
+
+  @OnEvent(DomainEvents.LoanRepaymentRecorded)
+  async onLoanRepayment(event: LoanRepaymentRecordedEvent): Promise<void> {
+    try {
+      await this.loanJournals.postRepayment(event);
+    } catch (e) {
+      this.logger.error(`Could not post loan ${event.loanRef} repayment to the books: ${(e as Error).message}`);
+    }
+  }
 
   /**
    * AG payroll deductions for month M arrive around the 10th of M+1. If

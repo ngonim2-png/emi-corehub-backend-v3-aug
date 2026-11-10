@@ -178,8 +178,11 @@ export class AppClientController {
 
   @Post('loans')
   @Throttle({ default: { limit: 5, ttl: 3_600_000 } })
-  requestLoan(@CurrentApp() who: AppAuthContext, @Body() dto: LoanRequestDto) {
-    return this.clientService.requestLoan(who.id, dto);
+  @UseInterceptors(FileFieldsInterceptor([
+    { name: 'idCopy', maxCount: 2 }, { name: 'salarySlip', maxCount: 3 }, { name: 'photo', maxCount: 1 }, { name: 'addressProof', maxCount: 2 },
+  ], upload))
+  requestLoan(@CurrentApp() who: AppAuthContext, @Body() dto: LoanRequestDto, @UploadedFiles() files: Record<string, UploadedAppFile[]> = {}) {
+    return this.clientService.requestLoan(who.id, dto, files ?? {});
   }
 
   @Get('requests')

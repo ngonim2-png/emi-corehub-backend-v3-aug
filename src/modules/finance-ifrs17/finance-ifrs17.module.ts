@@ -15,6 +15,8 @@ import { FinancialReportsService } from './financial-reports.service';
 import { BankReconciliationController, BudgetController, CashFlowController } from './financial-reports.controller';
 import { Ifrs17Controller } from './ifrs17.controller';
 import { FinanceEventListener } from './finance-event.listener';
+import { LoanJournalService } from './loan-journal.service';
+import { LoanJournalController } from './loan-journal.controller';
 import { AuditModule } from '../audit/audit.module';
 import { JobsModule } from '../../jobs/jobs.module';
 
@@ -35,8 +37,8 @@ import { JobsModule } from '../../jobs/jobs.module';
     AuditModule,
     JobsModule,
   ],
-  providers: [JournalService, FinancialReportsService, FinanceEventListener],
-  controllers: [JournalController, ReportsController, BankReconciliationController, BudgetController, CashFlowController, Ifrs17Controller],
+  providers: [JournalService, FinancialReportsService, FinanceEventListener, LoanJournalService],
+  controllers: [JournalController, ReportsController, BankReconciliationController, BudgetController, CashFlowController, Ifrs17Controller, LoanJournalController],
   exports: [JournalService, FinancialReportsService],
 })
 export class FinanceIfrs17Module {}

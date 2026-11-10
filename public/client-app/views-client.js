@@ -264,18 +264,46 @@
   };
 
   // ----------------------------------------------------------------- loans
-  var LOAN_RATE = 25;
+  // Rate and tenures come from the server with the eligibility check, so a change there needs no app update.
+  var loanRate = 25;
   function loanFigures(principal, months) {
-    var interest = principal * LOAN_RATE / 100, total = principal + interest;
+    var interest = principal * loanRate / 100, total = principal + interest;
     return { interest: interest, total: total, monthly: total / months };
   }
+  function tenureText(el) {
+    var t = (el && el.tenureOptions && el.tenureOptions.length) ? el.tenureOptions : [6, 12];
+    return t.length === 1 ? t[0] + ' months' : t.slice(0, -1).join(', ') + ' or ' + t[t.length - 1] + ' months';
+  }
   function loanCard(l) {
-    return ui.card({ tag: 'article', label: l.loanType + ' loan of ' + EMI.money(l.principal) }, [
-      ui.cardHeader({ title: l.loanType + ' loan', meta: 'Requested ' + EMI.fmtDate(l.requestedAt), end: ui.status('loan', l.status) }),
-      ui.dl([['Amount', EMI.money(l.principal)], ['Period', EMI.plural(l.tenureMonths, 'month')], ['Monthly payment', EMI.money(l.monthlyPayment)], ['Total to repay', EMI.money(l.totalRepayable)], ['Item', l.applianceDescription]]),
+    var paid = 0, due = 0, nowMonth = new Date().toISOString().slice(0, 7);
+    l.repayments.forEach(function (x) { paid += x.amountPaid; due += x.amountDue; });
+    var title = l.loanType + ' loan' + (l.loanRef ? ' ' + l.loanRef : '');
+    return ui.card({ tag: 'article', label: title + ' of ' + EMI.money(l.principal) }, [
+      ui.cardHeader({ title: title, meta: 'Requested ' + EMI.fmtDate(l.requestedAt), end: ui.status('loan', l.status) }),
+      ui.dl([
+        ['Amount', EMI.money(l.principal)],
+        ['Purpose', l.purpose ? l.purpose + (l.purposeDetail ? ': ' + l.purposeDetail : '') : null],
+        ['Period', EMI.plural(l.tenureMonths, 'month')], ['Monthly payment', EMI.money(l.monthlyPayment)], ['Total to repay', EMI.money(l.totalRepayable)],
+        ['Left to pay', l.repayments.length ? EMI.money(Math.max(0, due - paid)) : null],
+        ['Item', l.applianceDescription],
+        ['You asked for', l.requestedPrincipal && l.requestedPrincipal !== l.principal ? EMI.money(l.requestedPrincipal) : null]
+      ]),
+      l.status === 'Deferred' && l.decisionNote ? ui.card({ tone: 'warning' }, [h('p', { class: 'small' }, h('strong', null, 'We need more information: '), l.decisionNote), h('p', { class: 'small' }, h('a', { href: '#/messages' }, 'Reply to the office'), ' or visit a branch.')]) : null,
+      l.status === 'Rejected' && l.decisionNote ? h('p', { class: 'small' }, h('strong', null, 'Reason: '), l.decisionNote) : null,
+      l.conditions && (l.status === 'Approved' || l.status === 'Disbursed') ? h('p', { class: 'small' }, h('strong', null, 'Conditions: '), l.conditions) : null,
       l.repayments.length ? ui.disclosure({ summary: 'Repayment schedule' }, ui.list(l.repayments.map(function (x) {
-        return { title: EMI.monthLabel(x.dueMonth), meta: ui.status('repayment', x.status), end: EMI.money(x.amountDue) };
+        var late = x.status !== 'Paid' && x.dueMonth < nowMonth;
+        return { title: EMI.monthLabel(x.dueMonth), meta: late ? ui.status('repayment', 'Overdue') : ui.status('repayment', x.status), end: EMI.money(x.amountDue) };
       }), { label: 'Repayment schedule' })) : null
+    ]);
+  }
+  function notEligibleCard(el) {
+    var reasons = el.reasons && el.reasons.length ? el.reasons : ['You need at least ' + el.monthsRequired + ' months of premium paid. You have paid ' + el.monthsPaid + '.'];
+    return ui.card({ tone: 'warning' }, [
+      h('h2', { class: 'card__title' }, 'You cannot request a loan yet'),
+      h('ul', { class: 'small' }, reasons.map(function (x) { return h('li', null, x); })),
+      el.monthsPaid < el.monthsRequired ? ui.progress({ value: el.monthsPaid, max: el.monthsRequired, label: 'Months of premium paid towards loan eligibility', start: el.monthsPaid + ' of ' + el.monthsRequired + ' months', valueText: el.monthsPaid + ' of ' + el.monthsRequired + ' months' }) : null,
+      h('p', { class: 'small' }, 'Questions? ', h('a', { href: '#/messages' }, 'Message the office'), '.')
     ]);
   }
   EMI.views.loans = function () {
@@ -285,9 +313,8 @@
         var me = r.me, el = me.loanEligibility;
         return [
           el.eligible
-            ? ui.card({ tone: 'note' }, [h('h2', { class: 'card__title' }, 'You can request a loan'), h('p', { class: 'small' }, 'You have paid ' + EMI.plural(el.monthsPaid, 'month') + ' of premium. Loans are repaid over up to 12 months with a flat 25% interest.'), ui.button({ label: 'Request a loan', href: '#/loans/new' })])
-            : ui.card({ tone: 'warning' }, [h('h2', { class: 'card__title' }, 'Not yet eligible'), h('p', { class: 'small' }, 'You need at least ' + el.monthsRequired + ' months of premium paid to request a loan. You have paid ' + el.monthsPaid + '.'),
-              ui.progress({ value: el.monthsPaid, max: el.monthsRequired, label: 'Months of premium paid towards loan eligibility', start: el.monthsPaid + ' of ' + el.monthsRequired + ' months', valueText: el.monthsPaid + ' of ' + el.monthsRequired + ' months' })]),
+            ? ui.card({ tone: 'note' }, [h('h2', { class: 'card__title' }, 'You can request a loan'), h('p', { class: 'small' }, 'You have paid ' + EMI.plural(el.monthsPaid, 'month') + ' of premium. Loans are repaid over ' + tenureText(el) + ', with a flat ' + (el.interestRatePct != null ? el.interestRatePct : 25) + '% interest on the amount borrowed.'), ui.button({ label: 'Apply for a loan', href: '#/loans/new' })])
+            : notEligibleCard(el),
           me.loans.length ? h('div', { class: 'stack' }, me.loans.map(loanCard))
             : ui.card({}, ui.emptyState({ icon: 'loan', title: 'No loans', body: 'Loans you request appear here with their approval progress and repayment schedule.' }))
         ];
@@ -295,22 +322,62 @@
     });
   };
 
+  var DECLARATION = [
+    'I am an existing insurance client of Enhanced Mutual and have given my correct policy information.',
+    'All information in this application is true, accurate and complete to the best of my knowledge.',
+    'Sending this application does not automatically mean the loan is approved.',
+    'Processing and verification take at least 30 days and at most 60 days.',
+    'I allow Enhanced Mutual to verify my policy, employment, income, bank details, identification, address and existing debts.',
+    'I allow Enhanced Mutual, where the law permits, to contact my employer, bank, guarantor, referees or others to verify my information.',
+    'False, misleading or fraudulent information may lead to my application or loan being rejected or cancelled.',
+    'If approved, I will keep to the repayment terms in the final loan agreement.',
+    'If I do not repay when due, Enhanced Mutual may take recovery action under the loan agreement and the law.',
+    'I agree that my personal information is used to assess, run and recover this loan, under data-protection rules.',
+    'The final interest, charges, repayment period and other terms will be shown to me before I sign the loan agreement.'
+  ];
   EMI.views.loanNew = function () {
     clientPage({
-      title: 'Request a loan', nav: 'loans', back: true, skeleton: 'form', force: true,
+      title: 'Apply for a loan', nav: 'loans', back: true, skeleton: 'form', force: true,
       render: function (r) {
-        var el = r.me.loanEligibility;
-        if (!el.eligible) return ui.card({}, ui.emptyState({ icon: 'clock', title: 'Not yet eligible', body: 'You need at least ' + el.monthsRequired + ' months of premium paid to request a loan. You have paid ' + el.monthsPaid + '.', action: ui.button({ label: 'Back to loans', variant: 'secondary', href: '#/loans' }) }));
+        var el = r.me.loanEligibility, c = r.me.client || {};
+        if (!el.eligible) return [notEligibleCard(el), ui.button({ label: 'Back to loans', variant: 'secondary', href: '#/loans' })];
+        loanRate = el.interestRatePct != null ? Number(el.interestRatePct) : 25;
+        var tenures = el.tenureOptions && el.tenureOptions.length ? el.tenureOptions : [6, 12];
         return [
-          ui.pageHead({ title: 'How much do you need?', sub: 'Flat 25% interest, repaid monthly over up to 12 months. A Life Manager and the Finance Director both approve every loan.' }),
-          ui.form({ name: 'loanNew', submit: { label: 'Send loan request' }, children: [
-            ui.select({ id: 'loanType', label: 'Type of loan', options: [{ value: 'Cash', label: 'Cash loan' }, { value: 'Appliance', label: 'Appliance loan' }] }),
-            ui.field({ id: 'appliance', wrapId: 'applBox', hidden: true, label: 'Which item?', placeholder: 'e.g. Refrigerator, television', required: true }),
-            ui.field({ id: 'principal', label: 'Amount (NLe)', type: 'number', inputmode: 'decimal', min: 1, required: true }),
-            h('div', { class: 'field' },
-              h('label', { class: 'field__label', for: 'tenure' }, 'Repay over ', h('strong', { id: 'tenureLbl' }, '6'), ' months'),
-              h('input', { id: 'tenure', type: 'range', min: 1, max: 12, value: 6, class: 'control control--range', aria: { valuetext: '6 months' } })),
-            ui.card({ tone: 'note', id: 'loanPreview' }, h('p', { class: 'small' }, 'Enter an amount to see your monthly payment.'))
+          ui.pageHead({ title: 'Loan application', sub: 'Flat ' + loanRate + '% interest on the amount borrowed, repaid monthly over ' + tenureText(el) + '. It takes about 5 minutes. We check every application, which takes 30 to 60 days.' }),
+          ui.form({ name: 'loanNew', submit: { label: 'Send application' }, children: [
+            ui.fieldset({ legend: 'The loan' }, [
+              ui.select({ id: 'loanType', label: 'Type of loan', options: [{ value: 'Cash', label: 'Cash loan' }, { value: 'Appliance', label: 'Electrical appliance loan' }] }),
+              ui.field({ id: 'appliance', wrapId: 'applBox', hidden: true, label: 'Which item?', placeholder: 'e.g. Refrigerator, television', required: true }),
+              ui.select({ id: 'purpose', label: 'What is the loan for?', options: ['Commercial / Income Generation', 'Personal Use', 'Other'] }),
+              ui.field({ id: 'purposeDetail', label: 'Tell us a little more', optional: true, maxlength: 500, placeholder: 'e.g. stock for my shop, school fees', hint: 'Needed if you chose Other.' }),
+              ui.field({ id: 'principal', label: 'Amount (NLe)', type: 'number', inputmode: 'decimal', min: 1, required: true }),
+              ui.select({ id: 'tenure', label: 'Repay over', value: tenures[tenures.length - 1], options: tenures.map(function (t) { return { value: t, label: t + ' months' }; }) }),
+              ui.card({ tone: 'note', id: 'loanPreview' }, h('p', { class: 'small' }, 'Enter an amount to see your monthly payment.'))
+            ]),
+            ui.fieldset({ legend: 'Your income' }, [
+              ui.field({ id: 'occupation', label: 'Occupation', value: c.occupation || '', maxlength: 150 }),
+              ui.field({ id: 'monthlyIncome', label: 'Monthly income after tax (NLe)', type: 'number', inputmode: 'decimal', min: 0, required: true }),
+              ui.field({ id: 'existingDebt', label: 'Other loan payments each month (NLe)', type: 'number', inputmode: 'decimal', min: 0, value: '0', hint: 'Enter 0 if you have none.' }),
+              ui.field({ id: 'staffPin', label: 'Staff PIN code', optional: true, value: c.payrollPinCode || '', maxlength: 50, hint: 'For civil servants paid through the Accountant General.' })
+            ]),
+            ui.fieldset({ legend: 'Your identification' }, [
+              ui.select({ id: 'idType', label: 'Type of ID', value: c.nationalId ? 'National ID Card' : '', placeholder: 'Choose', options: ['National ID Card', "Driver's Licence", 'Passport', 'Voter ID', 'Other approved identification'] }),
+              ui.field({ id: 'idNumber', label: 'ID number', value: c.nationalId || '', maxlength: 60 }),
+              ui.field({ id: 'idExpiry', label: 'Expiry date', type: 'date', optional: true })
+            ]),
+            ui.fieldset({ legend: 'Documents' }, [
+              h('p', { class: 'small' }, 'Photos or PDFs, up to 6 MB each. You can also bring them to a branch.'),
+              ui.fileField({ id: 'idCopy', label: 'Photo of your ID', optional: true, accept: 'image/*,application/pdf' }),
+              ui.fileField({ id: 'salarySlip', label: 'Latest salary slip', optional: true, accept: 'image/*,application/pdf' }),
+              ui.fileField({ id: 'photo', label: 'Passport-size photo', optional: true, accept: 'image/*' }),
+              ui.fileField({ id: 'addressProof', label: 'Proof of address', optional: true, accept: 'image/*,application/pdf', hint: 'For example a utility bill.' })
+            ]),
+            ui.fieldset({ legend: 'Declaration' }, [
+              ui.disclosure({ summary: 'Read the declaration' }, h('ol', { class: 'small' }, DECLARATION.map(function (x) { return h('li', null, x); }))),
+              ui.field({ id: 'declName', label: 'Your full name', value: c.fullName || '', required: true, autocomplete: 'name' }),
+              ui.checkbox({ id: 'declAgree', label: 'I have read the declaration and agree to it.' })
+            ])
           ] })
         ];
       }
@@ -319,26 +386,51 @@
   EMI.updateLoanPreview = function () {
     var pr = document.getElementById('principal'), tn = document.getElementById('tenure'), box = document.getElementById('loanPreview');
     if (!pr || !tn || !box) return;
-    document.getElementById('tenureLbl').textContent = tn.value;
-    tn.setAttribute('aria-valuetext', EMI.plural(Number(tn.value), 'month'));
     document.getElementById('applBox').hidden = document.getElementById('loanType').value !== 'Appliance';
     var p = Number(pr.value), m = Number(tn.value);
-    if (!(p > 0)) { box.innerHTML = ui.render(h('p', { class: 'small' }, 'Enter an amount to see your monthly payment.')); return; }
+    if (!(p > 0) || !(m > 0)) { box.innerHTML = ui.render(h('p', { class: 'small' }, 'Enter an amount to see your monthly payment.')); return; }
     var f = loanFigures(p, m);
-    box.innerHTML = ui.render(ui.dl([['Monthly payment', EMI.money(f.monthly)], ['Interest (25% flat)', EMI.money(f.interest)], ['Total to repay', EMI.money(f.total)]]));
+    box.innerHTML = ui.render(ui.dl([['Monthly payment', EMI.money(f.monthly) + ' for ' + m + ' months'], ['Interest (' + loanRate + '% flat)', EMI.money(f.interest)], ['Total to repay', EMI.money(f.total)]]));
   };
   EMI.actions.loanNewSubmit = function (form) {
     EMI.submit(form, {
       busy: 'Sending...', staleToast: 'Your loan request was sent.',
       rules: {
         principal: [v.required('Enter the amount you want to borrow.'), v.number({ min: 1 }, 'Enter an amount greater than zero.')],
-        appliance: [v.when(function (x) { return x.loanType === 'Appliance'; }, [v.required('Tell us which item the loan is for.')])]
+        appliance: [v.when(function (x) { return x.loanType === 'Appliance'; }, [v.required('Tell us which item the loan is for.')])],
+        purposeDetail: [v.when(function (x) { return x.purpose === 'Other'; }, [v.required('Tell us what the loan is for.')])],
+        monthlyIncome: [v.required('Enter your monthly income.'), v.number({ min: 1 }, 'Enter your monthly income as a number.')],
+        existingDebt: [v.number({ min: 0 }, 'Enter a number, or 0.')],
+        declName: [v.required('Type your full name.'), v.minLength(3, 'Type your full name.')],
+        declAgree: [v.checked('Tick the box to agree to the declaration.')]
       },
-      request: function (x) { return EMI.api('POST', '/loans', { loanType: x.loanType, applianceDescription: x.loanType === 'Appliance' ? x.appliance : undefined, principal: Number(x.principal), tenureMonths: Number(x.tenure) }); },
-      success: function () {
+      validate: function (x) {
+        var f = loanFigures(Number(x.principal) || 0, Number(x.tenure) || 1);
+        if (Number(x.monthlyIncome) > 0 && f.monthly > Number(x.monthlyIncome)) return { principal: 'The monthly payment would be more than your income. Choose a smaller amount or a longer period.' };
+        var big = ['idCopy', 'salarySlip', 'photo', 'addressProof'].filter(function (id) { var el = document.getElementById(id); return el && el.files && Array.prototype.some.call(el.files, function (f) { return f.size > 6 * 1024 * 1024; }); });
+        if (big.length) { var e = {}; e[big[0]] = 'This file is larger than 6 MB. Take a smaller photo.'; return e; }
+        return null;
+      },
+      request: function (x) {
+        var fd = new FormData();
+        var add = function (k, val) { if (val !== undefined && val !== null && val !== '') fd.append(k, val); };
+        add('loanType', x.loanType); if (x.loanType === 'Appliance') add('applianceDescription', x.appliance);
+        add('purpose', x.purpose); add('purposeDetail', x.purposeDetail);
+        add('principal', x.principal); add('tenureMonths', x.tenure);
+        add('occupation', x.occupation); add('monthlyIncome', x.monthlyIncome); add('existingMonthlyDebt', x.existingDebt || '0');
+        add('staffPinCode', x.staffPin); add('idType', x.idType); add('idNumber', x.idNumber); add('idExpiry', x.idExpiry);
+        add('declarationName', x.declName);
+        ['idCopy', 'salarySlip', 'photo', 'addressProof'].forEach(function (id) {
+          var el = document.getElementById(id);
+          if (el && el.files) Array.prototype.forEach.call(el.files, function (f) { fd.append(id, f, f.name); });
+        });
+        return EMI.api('POST', '/loans', fd);
+      },
+      offlineHint: 'Your answers are still on this screen - try again when you have signal.',
+      success: function (r) {
         EMI.state.me = null;
-        EMI.screen({ title: 'Loan requested', subtitle: 'Thank you', nav: 'loans', body: ui.successState({
-          title: 'Request sent', body: 'Your loan request is waiting for approval. We will notify you at every step.',
+        EMI.screen({ title: 'Application sent', subtitle: 'Thank you', nav: 'loans', body: ui.successState({
+          title: 'Application sent', reference: r && r.loanRef, referenceLabel: 'Your loan reference is', body: 'We will check your application, which takes 30 to 60 days. We will notify you at every step, and may ask you for more documents.',
           actions: ui.button({ label: 'View my loans', variant: 'secondary', href: '#/loans' })
         }) });
       }
