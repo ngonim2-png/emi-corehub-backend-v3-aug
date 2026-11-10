@@ -449,3 +449,15 @@ textarea.control { min-height: 116px; resize: vertical; }
 
 /* Focus ring stays visible on the navy app bar and hero card */
 .appbar :focus-visible, .card--hero :focus-visible { outline-color: var(--emi-accent); }
+
+/* ---------- Install banner (shown when opened in a browser, e.g. from the QR code) ---------- */
+.installbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--safe-b) + 76px); width: calc(100% - 24px); max-width: calc(var(--app-max) - 24px); z-index: 40; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 14px; background: var(--emi-deep); color: var(--text-on-dark); border-radius: 16px; box-shadow: 0 10px 28px rgba(16,33,63,.35); }
+.installbar__icon { border-radius: 10px; flex: none; }
+.installbar__text { flex: 1 1 160px; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 0.82rem; line-height: 1.35; color: var(--text-on-dark-muted); }
+.installbar__text strong { color: #fff; font-size: 0.95rem; }
+.installbar__actions { display: flex; gap: 8px; flex: 1 1 100%; justify-content: flex-end; }
+.installbar__go, .installbar__close { min-height: 44px; padding: 0 18px; border-radius: 12px; font: inherit; font-weight: 700; font-size: 0.9rem; border: 1px solid transparent; cursor: pointer; }
+.installbar__go { background: var(--accent); color: var(--accent-ink); flex: 1; }
+.installbar__close { background: transparent; color: #fff; border-color: rgba(255,255,255,.35); }
+.installbar__go:active, .installbar__close:active { transform: scale(.97); }
+.installbar button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
