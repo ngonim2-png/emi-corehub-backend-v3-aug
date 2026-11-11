@@ -4,6 +4,7 @@ import {
   Column,
   ManyToOne,
   CreateDateColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 
 @Entity('employees')
@@ -30,8 +31,18 @@ export class EmployeeEntity {
   @Column({ type: 'uuid', nullable: true, unique: true })
   userId: string | null;
 
+  /** Set when the person leaves; the record is kept for payroll, leave and attendance history. */
+  @Column({ type: 'date', nullable: true })
+  exitDate: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  exitReason: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }
 
 @Entity('leave_requests')

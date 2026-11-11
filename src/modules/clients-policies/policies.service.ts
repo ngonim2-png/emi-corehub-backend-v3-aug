@@ -147,7 +147,7 @@ export class PoliciesService {
     let k = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     for (let i = 0; i < months; i++) { keys.unshift(k); k = prevMonth(k); }
     const rows = keys.map((month) => {
-      let expectedMinor = 0, policiesDue = 0, policiesPaid = 0, otherMinor = 0;
+      let expectedMinor = 0, policiesDue = 0, policiesPaid = 0, otherMinor = 0, paidByAg = 0, paidOtherWay = 0;
       let agMinor = 0, agOutsideMinor = 0, agOutsideCount = 0;
       for (const p of allWithPin) {
         const m = (split.get(p.id) ?? {})[month];
@@ -169,7 +169,11 @@ export class PoliciesService {
         otherMinor += Math.max(Money.fromMajor((split.get(p.id) ?? {})[month]?.other ?? 0).toMinor(), 0);
         policiesDue++;
         expectedMinor += premium;
-        if (paid >= premium) policiesPaid++;
+        if (paid >= premium) {
+          policiesPaid++;
+          // Paid by the AG deduction, or covered some other way (cash, mobile money, paid in advance...).
+          if (agThisMonth) paidByAg++; else paidOtherWay++;
+        }
       }
       const receivedMinor = Math.max(agMinor, 0) + otherMinor;
       const overdueFrom = premiumOverdueFrom(month, rules, true);
@@ -184,6 +188,9 @@ export class PoliciesService {
         state: expectedMinor === 0 ? 'No payroll policies' : state,
         policiesDue,
         policiesPaid,
+        /** Of the paid policies: those with an AG deduction for the month, and those paid some other way. */
+        paidByAg,
+        paidOtherWay,
         expected: Money.fromMinor(expectedMinor).toMajor(),
         received: Money.fromMinor(receivedMinor).toMajor(),
         /** AG payroll deductions recorded for this month, on every policy with a pincode. */
@@ -212,6 +219,7 @@ export class PoliciesService {
     const policies = (await this.policiesRepo.find({ relations: ['client', 'product'] }))
       .filter((p) => p.status !== 'Cancelled' && isPayrollDeductionPolicy(p));
     const paymentsByPolicy = await this.paymentsService.getPaymentsByMonthForPolicies(policies.map((p) => p.id));
+    const details = await this.paymentsService.getMonthPaymentDetails(policies.map((p) => p.id), month);
     const rows = [];
     for (const p of policies) {
       const start = p.commencementDate.slice(0, 7);
@@ -237,6 +245,19 @@ export class PoliciesService {
         received: Money.fromMinor(receivedMinor).toMajor(),
         state,
         lastPaidMonth: paidMonths.length ? paidMonths[paidMonths.length - 1] : null,
+        ...(() => {
+          const list = (details.get(p.id) ?? []).filter((d) => d.amount !== 0);
+          const ag = list.filter((d) => d.method === 'Payroll Deduction').reduce((t, d) => t + d.amount, 0);
+          const other = list.filter((d) => d.method !== 'Payroll Deduction').reduce((t, d) => t + d.amount, 0);
+          const methods = [...new Set(list.filter((d) => d.amount > 0).map((d) => (d.method === 'Payroll Deduction' ? 'AG payroll' : d.method)))];
+          return {
+            receivedAg: Math.round(ag * 100) / 100,
+            receivedOther: Math.round(other * 100) / 100,
+            paidBy: methods.join(' + '),
+            recordedOn: list.length ? list[list.length - 1].recordedOn : null,
+            receiptNos: list.filter((d) => d.amount > 0).map((d) => d.receiptNo).join(', '),
+          };
+        })(),
       });
     }
     rows.sort((a, b) => a.clientName.localeCompare(b.clientName));

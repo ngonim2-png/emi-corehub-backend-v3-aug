@@ -304,6 +304,28 @@ export class PaymentsService {
     return result;
   }
 
+  /** Each policy's payments for one premium month: how it was paid and when it was recorded. */
+  async getMonthPaymentDetails(policyIds: string[], month: string): Promise<Map<string, { method: string; amount: number; recordedOn: string; receiptNo: string }[]>> {
+    const result = new Map<string, { method: string; amount: number; recordedOn: string; receiptNo: string }[]>();
+    if (policyIds.length === 0) return result;
+    const rows: { policyId: string; method: string; amount: string; createdAt: Date; receiptNo: string }[] = await this.paymentsRepo
+      .createQueryBuilder('payment')
+      .select('payment.policyId', 'policyId')
+      .addSelect('payment.paymentMethod', 'method')
+      .addSelect('payment.amount', 'amount')
+      .addSelect('payment.createdAt', 'createdAt')
+      .addSelect('payment.receiptNo', 'receiptNo')
+      .where('payment.policyId IN (:...policyIds)', { policyIds })
+      .andWhere('payment.paymentMonth = :month', { month })
+      .orderBy('payment.createdAt', 'ASC')
+      .getRawMany();
+    for (const r of rows) {
+      if (!result.has(r.policyId)) result.set(r.policyId, []);
+      result.get(r.policyId)!.push({ method: r.method, amount: Number(r.amount), recordedOn: new Date(r.createdAt).toISOString().slice(0, 10), receiptNo: r.receiptNo });
+    }
+    return result;
+  }
+
   async getPaymentsByMonthForPolicies(policyIds: string[]): Promise<Map<string, Record<string, number>>> {
     const result = new Map<string, Record<string, number>>();
     if (policyIds.length === 0) return result;

@@ -98,7 +98,12 @@ export class AuthService {
     }
     // Production implementation: check refreshToken against a stored,
     // hashed, single-use record and rotate it here (rotation detects theft).
-    return this.issueTokenPair(payload.sub, payload.role, payload.branchId, payload.fullName);
+    // Re-read the account each time: a disabled or suspended account (for example
+    // staff who have left) cannot keep renewing its session, and a role change
+    // takes effect at the next renewal.
+    const user = await this.usersService.findById(payload.sub).catch(() => null);
+    if (!user || user.status !== 'Active') throw new UnauthorizedException('This account is not active');
+    return this.issueTokenPair(user.id, user.role?.name ?? payload.role, user.branchId, user.fullName);
   }
 
   async startMfaEnrollment(userId: string): Promise<{ secret: string; otpauthUrl: string }> {

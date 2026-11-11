@@ -76,9 +76,14 @@ export class PoliciesController {
         { header: 'Monthly Premium', key: 'monthlyPremium', width: 16, numeric: true },
         { header: 'Received', key: 'received', width: 14, numeric: true },
         { header: 'Status', key: 'state', width: 12 },
+        { header: 'Paid by', key: 'paidBy', width: 24 },
+        { header: 'AG amount', key: 'receivedAg', width: 12, numeric: true },
+        { header: 'Other amount', key: 'receivedOther', width: 12, numeric: true },
+        { header: 'Recorded on', key: 'recordedOn', width: 12 },
+        { header: 'Receipt nos', key: 'receiptNos', width: 30 },
         { header: 'Last Month Paid', key: 'lastPaidMonth', width: 16 },
       ],
-      rows.map((r) => ({ ...r, payrollPinCode: r.payrollPinCode ?? '', lastPaidMonth: r.lastPaidMonth ?? '' })),
+      rows.map((r) => ({ ...r, payrollPinCode: r.payrollPinCode ?? '', lastPaidMonth: r.lastPaidMonth ?? '', recordedOn: r.recordedOn ?? '' })),
       `AG payroll deductions, ${month}: ${label} (${rows.length})`,
     );
     sendExcelFile(res, buffer, `ag-payroll-${month}-${which}.xlsx`);

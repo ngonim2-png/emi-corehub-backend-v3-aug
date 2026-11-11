@@ -1,3 +1,5 @@
+import { DepartmentEntity } from '../requisitions/entities/requisition.entity';
+import { UserEntity } from '../identity-access/entities/user.entity';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EmployeeEntity, LeaveRequestEntity, AttendanceEntity } from './entities/employee.entity';
@@ -8,7 +10,7 @@ import { PayrollService } from './payroll.service';
 import { PayrollController } from './payroll.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([EmployeeEntity, LeaveRequestEntity, AttendanceEntity, PayrollRunEntity, PayrollLineEntity])],
+  imports: [TypeOrmModule.forFeature([EmployeeEntity, LeaveRequestEntity, AttendanceEntity, PayrollRunEntity, PayrollLineEntity, DepartmentEntity, UserEntity])],
   providers: [HrService, PayrollService],
   controllers: [HrController, PayrollController],
   exports: [HrService, PayrollService],

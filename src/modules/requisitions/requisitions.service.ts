@@ -61,7 +61,27 @@ export class RequisitionsService {
   async departments() {
     const depts = await this.deptRepo.find({ order: { name: 'ASC' } });
     const heads = await this.userNames(depts.map((d) => d.headUserId).filter(Boolean) as string[]);
-    return depts.map((d) => ({ ...d, headName: d.headUserId ? heads.get(d.headUserId) ?? null : null }));
+    const counts: { department: string; n: string }[] = await this.employeesRepo
+      .createQueryBuilder('e').select('lower(trim(e.department))', 'department').addSelect('COUNT(*)', 'n')
+      .where("e.status <> 'Exited'").groupBy('lower(trim(e.department))').getRawMany();
+    const byName = new Map(counts.map((c) => [c.department, Number(c.n)]));
+    return depts.map((d) => ({ ...d, headName: d.headUserId ? heads.get(d.headUserId) ?? null : null, staffCount: byName.get(d.name.trim().toLowerCase()) ?? 0 }));
+  }
+
+  /** Removes a department nobody uses. One with staff or requisitions is switched off instead, so history keeps its name. */
+  async deleteDepartment(id: string) {
+    const d = await this.deptRepo.findOne({ where: { id } });
+    if (!d) throw new NotFoundException('Department not found.');
+    const staff = await this.employeesRepo.count({ where: { department: d.name } });
+    const reqs = await this.reqRepo.count({ where: { departmentId: id } });
+    if (staff || reqs) {
+      const active = await this.employeesRepo.count({ where: { department: d.name, status: In(['Active', 'On Leave']) } });
+      if (active) throw new BadRequestException(`${d.name} still has ${active} staff member${active === 1 ? '' : 's'}. Move them to another department first.`);
+      await this.deptRepo.update(id, { active: false, headUserId: null });
+      return { deleted: false, deactivated: true, name: d.name };
+    }
+    await this.deptRepo.delete(id);
+    return { deleted: true, name: d.name };
   }
 
   async saveDepartment(dto: DepartmentDto, id?: string) {
@@ -75,7 +95,13 @@ export class RequisitionsService {
     if (id) {
       const d = await this.deptRepo.findOne({ where: { id } });
       if (!d) throw new NotFoundException('Department not found.');
-      await this.deptRepo.update(id, { name, headUserId: dto.headUserId ?? null, active: dto.active ?? d.active });
+      if ((dto.active === false) && d.active) {
+        const active = await this.employeesRepo.count({ where: { department: d.name, status: In(['Active', 'On Leave']) } });
+        if (active) throw new BadRequestException(`${d.name} still has ${active} staff member${active === 1 ? '' : 's'}. Move them to another department first.`);
+      }
+      await this.deptRepo.update(id, { name, headUserId: dto.headUserId === undefined ? d.headUserId : dto.headUserId, active: dto.active ?? d.active });
+      // A renamed department carries its staff with it.
+      if (name !== d.name) await this.employeesRepo.update({ department: d.name }, { department: name });
       return this.deptRepo.findOneOrFail({ where: { id } });
     }
     return this.deptRepo.save(this.deptRepo.create({ name, headUserId: dto.headUserId ?? null, active: dto.active ?? true }));

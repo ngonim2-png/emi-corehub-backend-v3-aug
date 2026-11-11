@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { AuditLog } from '../../common/decorators/audit-log.decorator';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { HrService } from './hr.service';
-import { CreateEmployeeDto, CreateLeaveRequestDto, DecideLeaveRequestDto, MarkAttendanceDto, CreateOwnLeaveRequestDto } from './dto/hr.dto';
+import {
+  CreateEmployeeDto, CreateLeaveRequestDto, DecideLeaveRequestDto, MarkAttendanceDto, CreateOwnLeaveRequestDto, ExitEmployeeDto, ReassignEmployeesDto, UpdateEmployeeDto,
+} from './dto/hr.dto';
 import { buildExcelExport } from '../../common/utils/excel-export.util';
 import { sendExcelFile } from '../../common/utils/send-excel-file.util';
 
@@ -30,8 +32,10 @@ export class HrController {
         { header: 'Job Title', key: 'jobTitle', width: 22 },
         { header: 'Hire Date', key: 'hireDate', width: 14 },
         { header: 'Status', key: 'status', width: 14 },
+        { header: 'Left on', key: 'exitDate', width: 12 },
+        { header: 'Reason for leaving', key: 'exitReason', width: 30 },
       ],
-      employees.map((e) => ({ fullName: e.fullName, department: e.department, jobTitle: e.jobTitle, hireDate: e.hireDate, status: e.status })),
+      employees.map((e) => ({ fullName: e.fullName, department: e.department, jobTitle: e.jobTitle, hireDate: e.hireDate, status: e.status, exitDate: e.exitDate ?? '', exitReason: e.exitReason ?? '' })),
       'Employee Register',
     );
     sendExcelFile(res, buffer, 'employees.xlsx');
@@ -40,6 +44,36 @@ export class HrController {
   @Get('employees')
   async findEmployees() {
     return this.hrService.findEmployees();
+  }
+
+  @Patch('employees/:id')
+  @AuditLog({ action: 'employee.updated', entityType: 'employee' })
+  async updateEmployee(@Param('id') id: string, @Body() dto: UpdateEmployeeDto) {
+    return this.hrService.updateEmployee(id, dto);
+  }
+
+  @Post('employees/reassign')
+  @AuditLog({ action: 'employee.reassigned', entityType: 'employee' })
+  async reassign(@Body() dto: ReassignEmployeesDto) {
+    return this.hrService.reassignEmployees(dto.employeeIds, dto.department);
+  }
+
+  @Post('employees/:id/exit')
+  @AuditLog({ action: 'employee.exited', entityType: 'employee' })
+  async exitEmployee(@Param('id') id: string, @Body() dto: ExitEmployeeDto, @CurrentUser() actor: AuthenticatedUser) {
+    return this.hrService.exitEmployee(id, dto, actor);
+  }
+
+  @Post('employees/:id/reinstate')
+  @AuditLog({ action: 'employee.reinstated', entityType: 'employee' })
+  async reinstateEmployee(@Param('id') id: string) {
+    return this.hrService.reinstateEmployee(id);
+  }
+
+  @Delete('employees/:id')
+  @AuditLog({ action: 'employee.deleted', entityType: 'employee' })
+  async deleteEmployee(@Param('id') id: string) {
+    return this.hrService.deleteEmployee(id);
   }
 
   @Post('leave-requests')

@@ -1,8 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { EmployeeEntity, LeaveRequestEntity, AttendanceEntity } from './entities/employee.entity';
-import { CreateEmployeeDto, CreateLeaveRequestDto, DecideLeaveRequestDto, MarkAttendanceDto } from './dto/hr.dto';
+import { CreateEmployeeDto, CreateLeaveRequestDto, DecideLeaveRequestDto, ExitEmployeeDto, MarkAttendanceDto, UpdateEmployeeDto } from './dto/hr.dto';
+import { PayrollLineEntity } from './entities/payroll.entity';
+import { DepartmentEntity } from '../requisitions/entities/requisition.entity';
+import { UserEntity } from '../identity-access/entities/user.entity';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 
 @Injectable()
@@ -13,10 +16,120 @@ export class HrService {
     private readonly leaveRepo: Repository<LeaveRequestEntity>,
     @InjectRepository(AttendanceEntity)
     private readonly attendanceRepo: Repository<AttendanceEntity>,
+    @InjectRepository(PayrollLineEntity) private readonly payrollLinesRepo: Repository<PayrollLineEntity>,
+    @InjectRepository(DepartmentEntity) private readonly deptRepo: Repository<DepartmentEntity>,
+    @InjectRepository(UserEntity) private readonly usersRepo: Repository<UserEntity>,
   ) {}
 
+  /** Departments are one shared list (HR and office requisitions); a new name typed by HR is added to it. */
+  private async ensureDepartment(name: string): Promise<string> {
+    const clean = name.trim().replace(/\s+/g, ' ');
+    const all = await this.deptRepo.find();
+    const found = all.find((d) => d.name.toLowerCase() === clean.toLowerCase());
+    if (found) {
+      if (!found.active) await this.deptRepo.update(found.id, { active: true });
+      return found.name;
+    }
+    await this.deptRepo.save(this.deptRepo.create({ name: clean, active: true }));
+    return clean;
+  }
+
   async createEmployee(dto: CreateEmployeeDto): Promise<EmployeeEntity> {
-    return this.employeesRepo.save(this.employeesRepo.create({ ...dto, status: 'Active' }));
+    const department = await this.ensureDepartment(dto.department);
+    return this.employeesRepo.save(this.employeesRepo.create({ ...dto, department, status: 'Active' }));
+  }
+
+  private async getEmployee(id: string) {
+    const e = await this.employeesRepo.findOne({ where: { id } });
+    if (!e) throw new NotFoundException('Employee not found.');
+    return e;
+  }
+
+  /** HR corrects or changes a staff record: name, department, title, hire date, status, linked login. */
+  async updateEmployee(id: string, dto: UpdateEmployeeDto): Promise<EmployeeEntity> {
+    const e = await this.getEmployee(id);
+    const patch: Partial<EmployeeEntity> = {};
+    if (dto.fullName !== undefined) patch.fullName = dto.fullName.trim();
+    if (dto.jobTitle !== undefined) patch.jobTitle = dto.jobTitle.trim();
+    if (dto.hireDate !== undefined) patch.hireDate = dto.hireDate;
+    if (dto.department !== undefined) patch.department = await this.ensureDepartment(dto.department);
+    if (dto.status !== undefined) {
+      if (e.status === 'Exited') throw new BadRequestException('This person has left. Use "Bring back" to make them active again.');
+      patch.status = dto.status;
+    }
+    if (dto.userId !== undefined) {
+      if (dto.userId) {
+        const u = await this.usersRepo.findOne({ where: { id: dto.userId } });
+        if (!u) throw new BadRequestException('That login was not found.');
+        const other = await this.employeesRepo.findOne({ where: { userId: dto.userId } });
+        if (other && other.id !== id) throw new BadRequestException(`That login is already linked to ${other.fullName}.`);
+      }
+      patch.userId = dto.userId || null;
+    }
+    if (Object.keys(patch).length) await this.employeesRepo.update(id, patch);
+    return this.getEmployee(id);
+  }
+
+  /** Moves several people to one department at once. */
+  async reassignEmployees(ids: string[], department: string) {
+    const name = await this.ensureDepartment(department);
+    const found = await this.employeesRepo.find({ where: { id: In(ids) } });
+    if (found.length !== ids.length) throw new BadRequestException('Some of the selected staff were not found.');
+    await this.employeesRepo.update({ id: In(ids) }, { department: name });
+    return { moved: found.length, department: name };
+  }
+
+  /**
+   * Records that someone has left. The record stays (payroll, leave and attendance
+   * history need it). Optionally their CoreHub login is switched off, and they stop
+   * being head of any department so requisitions don't wait on them.
+   */
+  async exitEmployee(id: string, dto: ExitEmployeeDto, actor: AuthenticatedUser) {
+    const e = await this.getEmployee(id);
+    if (e.status === 'Exited') throw new BadRequestException('Already recorded as left.');
+    await this.employeesRepo.update(id, {
+      status: 'Exited', exitDate: dto.exitDate, exitReason: dto.note?.trim() ? `${dto.reason}: ${dto.note.trim()}` : dto.reason,
+    });
+    let loginDisabled = false;
+    const headOf: string[] = [];
+    if (e.userId) {
+      const depts = await this.deptRepo.find({ where: { headUserId: e.userId } });
+      for (const d of depts) { await this.deptRepo.update(d.id, { headUserId: null }); headOf.push(d.name); }
+      if (dto.disableLogin) {
+        if (e.userId === actor.id) throw new BadRequestException('You cannot switch off your own login.');
+        const u = await this.usersRepo.findOne({ where: { id: e.userId } });
+        if (u && ['Supreme Admin'].includes(u.role?.name ?? '')) throw new BadRequestException('The Supreme Admin login can only be changed by the Supreme Admin.');
+        if (u) { await this.usersRepo.update(u.id, { status: 'Disabled' }); loginDisabled = true; }
+      }
+    }
+    return { employee: await this.getEmployee(id), loginDisabled, noLongerHeadOf: headOf, hadLogin: !!e.userId };
+  }
+
+  /** Undo a leaving record (for example entered by mistake, or the person came back). Their login stays as it is. */
+  async reinstateEmployee(id: string) {
+    const e = await this.getEmployee(id);
+    if (e.status !== 'Exited') throw new BadRequestException('This person has not left.');
+    await this.employeesRepo.update(id, { status: 'Active', exitDate: null, exitReason: null });
+    return this.getEmployee(id);
+  }
+
+  /**
+   * Deletes a staff record entered by mistake. Anyone with payroll, leave or attendance
+   * history is kept (record them as left instead), so past payroll still adds up.
+   */
+  async deleteEmployee(id: string) {
+    const e = await this.getEmployee(id);
+    const [payroll, leave, attendance] = await Promise.all([
+      this.payrollLinesRepo.count({ where: { employee: { id } } }),
+      this.leaveRepo.count({ where: { employee: { id } } }),
+      this.attendanceRepo.count({ where: { employee: { id } } }),
+    ]);
+    if (payroll || leave || attendance) {
+      const what = [payroll ? `${payroll} payroll line${payroll === 1 ? '' : 's'}` : '', leave ? `${leave} leave request${leave === 1 ? '' : 's'}` : '', attendance ? `${attendance} attendance record${attendance === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ');
+      throw new BadRequestException(`${e.fullName} has history (${what}), so the record has to be kept. Record them as left instead.`);
+    }
+    await this.employeesRepo.delete(id);
+    return { deleted: true, fullName: e.fullName };
   }
 
   async findEmployees(): Promise<EmployeeEntity[]> {

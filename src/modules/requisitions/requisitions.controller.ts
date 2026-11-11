@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { buildExcelExport } from '../../common/utils/excel-export.util';
 import { sendExcelFile } from '../../common/utils/send-excel-file.util';
@@ -89,6 +89,13 @@ export class RequisitionsController {
   @AuditLog({ action: 'department.updated', entityType: 'department' })
   updateDepartment(@Param('id') id: string, @Body() dto: DepartmentDto) {
     return this.service.saveDepartment(dto, id);
+  }
+
+  @Delete('departments/:id')
+  @Roles('Super Admin', 'HR Manager')
+  @AuditLog({ action: 'department.deleted', entityType: 'department' })
+  deleteDepartment(@Param('id') id: string) {
+    return this.service.deleteDepartment(id);
   }
 
   @Get()
